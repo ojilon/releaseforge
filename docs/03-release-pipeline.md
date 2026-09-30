@@ -1,41 +1,32 @@
 # Release pipeline
 
-Canonical flow for an Android Gradle project (mirrors and generalises Conductino-Android `scripts/release.py`).
+Full pipeline applies from **v0.0.2+**. v0.0.1 only needs scan + cache (see `docs/09-scan-foundation.md`).
 
-## Steps
+## Canonical steps (Android Gradle)
 
-1. **Resolve project** — load config, detect type, confirm working tree is clean enough (warn on dirty).
-2. **Version** — set `versionName`, increment `versionCode` in `gradle.properties` (or equivalent).
-3. **Tests** — run unit tests (optional flag to skip). Fail → stop, surface report.
-4. **Build debug** — `assembleDebug` (or configured task). Capture log.
-5. **Build release** — `assembleRelease`. Capture log.
-6. **Package** — copy APKs into `<data-root>/projects/<name>/releases/<version>/` (and optional repo `release/<version>/` mirror). Rename consistently.
-7. **Sign** — `apksigner sign` + `verify` on the release APK. Prompt for keystore password.
-8. **Notes** — generate markdown from git log since previous tag (template sections: Highlights, Changes, Bug fixes, Known issues). User can edit before continue.
-9. **Zip** — archive APKs (and any extra assets).
-10. **Tag** — annotated tag `v<version>`.
-11. **Publish** — `gh release create` (or API) with notes file and artifacts; `--prerelease` when requested.
-12. **Record** — update metrics and history under data-root.
+Matches and improves Conductino-Android `scripts/release.py`:
 
-## CLI shape
+1. Resolve project + load config/scan cache
+2. Set version (`versionName`, increment `versionCode`)
+3. Unit tests (optional skip)
+4. `assembleDebug` / `assembleRelease`
+5. Package APKs into data-root `releases/<version>/` (optional repo mirror)
+6. Sign release APK (`apksigner`) + verify
+7. Notes from git history (+ template sections)
+8. Zip artifacts
+9. Annotated tag `v<version>`
+10. `gh release create` with notes + assets (`--prerelease` optional)
+11. Update metrics/history
 
-```bash
-releaseforge release 0.1.0 --pre
-releaseforge release 0.1.0 --skip-tests
-releaseforge release 0.1.0 --notes-only
-```
+## Self-host pipeline (ReleaseForge 0.0.2)
 
-## TUI shape
-
-Command bar: `release 0.1.0 --pre`  
-Wizard (Huh) confirms version, pre-release flag, whether to install after, and shows a notes editor pane before publish.
-
-## Wails / other types
-
-Same orchestration; build step uses `wails build` or CMake; signing/install steps are no-ops or replaced by installer packaging as configured.
+1. `go test ./...`
+2. `go build -o dist/releaseforge.exe` (or platform matrix later)
+3. Notes from git since last tag
+4. Tag + GitHub release attaching the binary
 
 ## Safety
 
-- Never overwrite an existing GitHub release tag without explicit force.
-- Never store keystore passwords.
-- Prefer dry-run / confirm for publish step in TUI.
+- Confirm publish in TUI
+- No password files
+- Do not overwrite existing tags without explicit force

@@ -2,75 +2,56 @@
 
 ## Inspiration
 
-Claude Code and modern Gemini-style CLIs: a **persistent command input**, live updating regions, and minimal chrome. Not a single static screen — panes and tabs change with project state.
+Claude Code / Gemini CLI / OpenCode: **persistent command input**, live panes, open-folder flow, minimal chrome.
 
-## Layout (conceptual)
+## Layout
 
 ```
-┌─ ReleaseForge  ·  Conductino-Android  ·  v0.0.3_2  ·  device: R58M… ─┐
-│ Tabs:  Overview │ Build │ Logs │ Git │ Metrics │ Config                 │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  (active pane content — e.g. live Gradle log viewport, or metrics)      │
-│                                                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│ > build release --abis arm64-v8a                              [history] │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─ ReleaseForge 0.0.1  ·  SomeProject  ·  android-gradle  ·  main ─┐
+│ Tabs:  Overview │ Git │ Tools │ Logs │ Config                      │
+├────────────────────────────────────────────────────────────────────┤
+│  (active pane — scan summary, commit list, tool list, help text)   │
+├────────────────────────────────────────────────────────────────────┤
+│ > help                                                   [history] │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Header** — project name, current version, optional device, last build status.
-- **Tabs** — switch with number keys or click (BubbleZone later).
-- **Main pane** — Viewport (Bubbles) for logs, tables for metrics/git, forms for config.
-- **Command bar** — always focused unless a modal form is open. Supports history (↑/↓), fuzzy suggestions from history + known verbs.
-
-## Tabs
+## Tabs (v0.0.1 minimum)
 
 | Tab | Content |
 |-----|--------|
-| Overview | Scan summary, version, last build/test, quick actions |
-| Build | Task list, live log, progress, ABI/NDK controls |
-| Logs | Historical logs under data-root, open/re-tail |
-| Git | Recent commits, tags, draft notes |
-| Metrics | Simple counts/bars (builds, failures, releases) |
-| Config | Project + global settings, keystore path, data-root |
+| Overview | Name, root, type, version, last scan |
+| Git | Recent commits and tags from scan cache |
+| Tools | Detected tools, frameworks, config files |
+| Logs | Later: build logs; v0.0.1 may show scan messages |
+| Config | Data-root path, project config path (read-only first) |
 
-## Live logs
+Add Build / Metrics when builds exist (0.0.2+).
 
-- Build/test runners push line events to the app model.
-- Viewport auto-scrolls unless the user scrolls up.
-- Error lines highlighted (Lip Gloss); summary card on failure with path to full log and report.
+## Command bar commands (v0.0.1)
 
-## Commands (examples)
+| Input | Action |
+|-------|--------|
+| `open` | Native folder picker (or path prompt) → scan |
+| `open <path>` | Scan given path |
+| `scan` / `rescan` | Rescan current project |
+| `recent` | List recent projects; optional `recent <n>` to reopen |
+| `status` | Short status of current project + data root |
+| `help` / `-h` / `?` | Show help **in the main pane** |
+| `quit` / `exit` / `q` | Leave TUI |
 
-```
-scan
-status
-build debug
-build release --abis arm64-v8a,armeabi-v7a
-test unit
-test instrumented
-install debug
-install release
-version
-version --set 0.1.0
-release 0.1.0 --pre
-logs
-notes
-git log
-```
+Unknown commands: short error + hint to type `help`.
 
-Unknown input shows help snippet; Tab completes from history + verbs.
+## Help view
 
-## Forms (Huh)
+Rendered in the main pane (Viewport), not a one-line toast. Include command table above and note that CLI flags are available via `releaseforge --help` outside the TUI.
 
-- `init` wizard (data-root path).
-- Release confirmation (version, pre-release, edit notes).
-- Keystore password (secure input).
-- Device picker when multiple adb devices.
+## Folder open
+
+1. Prefer OS folder browser on Windows.
+2. On cancel, stay on previous project.
+3. On success: scan → update recent list → switch Overview to new project.
 
 ## Libraries
 
-- bubbletea — model/update/view
-- lipgloss — styles and layout
-- bubbles — textinput, viewport, list, table, spinner, progress, help
-- huh — multi-step forms and selects
+- bubbletea, lipgloss, bubbles (textinput, viewport, list), huh (init form, path fallback)
