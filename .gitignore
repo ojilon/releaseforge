@@ -37,3 +37,6 @@ ReleaseForgeData/
 *.keystore
 keystore.properties
 .ai.env
+
+#config for scripts
+scripts/config.json
