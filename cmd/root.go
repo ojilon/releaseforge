@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/ojilon/releaseforge/internal/app"
 	"github.com/ojilon/releaseforge/internal/config"
+	"github.com/ojilon/releaseforge/internal/storage"
+	"github.com/ojilon/releaseforge/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +22,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "releaseforge",
 	Short: "Local release, build, test and lifecycle tool for Android & PC projects",
+	Version: version.ToolVersion,
 	Long: `ReleaseForge owns the full local lifecycle of your projects:
 
   scan → test → build (correct targets/ABIs) → sign → package →
@@ -43,6 +48,7 @@ func init() {
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(scanCmd)
+	rootCmd.AddCommand(recentCmd)
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(buildCmd)
 	rootCmd.AddCommand(testCmd)
@@ -51,12 +57,26 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(notesCmd)
 }
 
 // resolveDataRoot applies --data-root / --config / env / default precedence.
 // It returns the data root and the global.json path without creating anything.
 func resolveDataRoot() (root string, configPath string, err error) {
 	return config.DiscoverDataRoot(cfgFile, dataRoot)
+}
+
+// requireDataRoot resolves the data root and fails with a clear init hint
+// when storage is not initialised or not accessible.
+func requireDataRoot() (root string, configPath string, err error) {
+	root, configPath, err = resolveDataRoot()
+	if err != nil {
+		return "", "", err
+	}
+	if !storage.Exists(configPath) {
+		return "", "", fmt.Errorf("data root not initialised (%s missing) — run `releaseforge init` first", configPath)
+	}
+	return root, configPath, nil
 }
 
 // placeholder helpers so the tree compiles before full implementation

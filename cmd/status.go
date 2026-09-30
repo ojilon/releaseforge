@@ -23,7 +23,13 @@ var statusCmd = &cobra.Command{
 		}
 		ver := info.Type
 		if code, name, err := project.CurrentVersion(info); err == nil && name != "" {
-			ver = fmt.Sprintf("%s (code %s) from %s", name, code, info.VersionFile)
+			if code != "" {
+				ver = fmt.Sprintf("%s (code %s) from %s", name, code, info.VersionFile)
+			} else if info.VersionFile != "" {
+				ver = fmt.Sprintf("%s from %s", name, info.VersionFile)
+			} else {
+				ver = name
+			}
 		}
 		fmt.Printf("project:   %s\nroot:      %s\ntype:      %s\nversion:   %s\ndata-root: %s\nconfig:    %s\n",
 			info.Name, info.Root, info.Type, ver, root, cfgPath)

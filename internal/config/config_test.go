@@ -109,3 +109,25 @@ func TestProjectValidateRejectsUnknownType(t *testing.T) {
 		t.Fatal("expected error for unknown type")
 	}
 }
+
+func TestDataRootFromExePath(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	data := filepath.Join(root, "data", "config")
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "global.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := dataRootFromExePath(filepath.Join(bin, "releaseforge.exe"))
+	if !ok {
+		t.Fatal("expected sibling data root")
+	}
+	if filepath.Clean(got) != filepath.Clean(filepath.Join(root, "data")) {
+		t.Fatalf("got %q", got)
+	}
+	if _, ok := dataRootFromExePath(filepath.Join(t.TempDir(), "lonely.exe")); ok {
+		t.Fatal("expected no match without bin layout")
+	}
+}

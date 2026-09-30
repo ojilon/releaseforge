@@ -206,7 +206,9 @@ func SaveProject(path string, cfg ProjectConfig) error {
 //     otherwise the root is inferred as the grandparent of the given path
 //     (<root>/config/global.json -> <root>).
 //  3. $RELEASEFORGE_DATA_ROOT env var
-//  4. storage.DefaultRoot(); if a global.json already exists there, its
+//  4. Installed layout: <install>/bin/<exe> with <install>/data seeded by
+//     the installer (zero-config first run after installation).
+//  5. storage.DefaultRoot(); if a global.json already exists there, its
 //     data_root value is canonical (supports relocated roots).
 func DiscoverDataRoot(cfgFileOverride, dataRootOverride string) (root string, configPath string, err error) {
 	if strings.TrimSpace(dataRootOverride) != "" {
@@ -241,10 +243,15 @@ func DiscoverDataRoot(cfgFileOverride, dataRootOverride string) (root string, co
 		return root, abs, nil
 	}
 
-	// Env var or default.
+	// Env var, installed layout, or default.
 	root, err = storage.ResolveRoot("")
 	if err != nil {
 		return "", "", err
+	}
+	if strings.TrimSpace(os.Getenv(storage.EnvDataRoot)) == "" {
+		if sib, ok := dataRootFromExe(); ok {
+			root = sib
+		}
 	}
 	configPath = storage.GlobalConfigPath(root)
 	if data, readErr := os.ReadFile(configPath); readErr == nil {
@@ -260,8 +267,38 @@ func DiscoverDataRoot(cfgFileOverride, dataRootOverride string) (root string, co
 	return root, configPath, nil
 }
 
-func writeJSON(path string, v any, perm os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+// dataRootFromExe discovers the installer-seeded data root: when the running
+// binary lives in <install>/bin/, and <install>/data/config/global.json
+// exists, that data dir wins over the machine default (flags and env still
+// win over it). This makes the first run after installation zero-config.
+func dataRootFromExe() (string, bool) {
+	return dataRootFromExePath(exePath())
+}
+
+func exePath() string {
+	if p, err := os.Executable(); err == nil && strings.TrimSpace(p) != "" {
+		return p
+	}
+	return os.Args[0]
+}
+
+func dataRootFromExePath(exe string) (string, bool) {
+	dir := filepath.Dir(exe)
+	if !strings.EqualFold(filepath.Base(dir), "bin") {
+		return "", false
+	}
+	data := filepath.Join(filepath.Dir(dir), "data")
+	if st, err := os.Stat(filepath.Join(data, "config", "global.json")); err != nil || st.IsDir() {
+		return "", false
+	}
+	abs, err := filepath.Abs(data)
+	if err != nil {
+		return "", false
+	}
+	return filepath.Clean(abs), true
+}
+
+func writeJSON(path string, v any, perm os.FileMode) error {	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(v, "", "  ")

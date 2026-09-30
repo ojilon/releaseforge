@@ -86,9 +86,13 @@ func Detect(dir string) (Info, error) {
 	if fileExists(abs, "build.gradle") || fileExists(abs, "build.gradle.kts") {
 		return Info{Root: abs, Name: name, Type: "java-cli", VersionFile: "build.gradle"}, nil
 	}
-	// 6. Go module.
+	// 6. Go module. VERSION file at root is the version source when present.
 	if fileExists(abs, "go.mod") {
-		return Info{Root: abs, Name: name, Type: "go", VersionFile: "go.mod"}, nil
+		vf := "go.mod"
+		if fileExists(abs, "VERSION") {
+			vf = "VERSION"
+		}
+		return Info{Root: abs, Name: name, Type: "go", VersionFile: vf}, nil
 	}
 	return Info{Root: abs, Name: name, Type: "generic", VersionFile: ""}, nil
 }
@@ -151,11 +155,49 @@ func SetGradleVersion(projectRoot, file, versionName string) (newCode string, er
 	return fmt.Sprintf("%d", next), nil
 }
 
+// ReadVersionFile reads a plain version file (e.g. VERSION). No auto-commit;
+// callers decide when to commit.
+func ReadVersionFile(projectRoot, file string) (string, error) {
+	if strings.TrimSpace(file) == "" {
+		file = "VERSION"
+	}
+	data, err := os.ReadFile(filepath.Join(projectRoot, file))
+	if err != nil {
+		return "", err
+	}
+	v := strings.TrimSpace(string(data))
+	if v == "" {
+		return "", fmt.Errorf("%s is empty", file)
+	}
+	return v, nil
+}
+
+// SetVersionFile writes a plain version file (e.g. VERSION). No commit.
+func SetVersionFile(projectRoot, file, version string) error {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return fmt.Errorf("version must not be empty")
+	}
+	if strings.TrimSpace(file) == "" {
+		file = "VERSION"
+	}
+	return os.WriteFile(filepath.Join(projectRoot, file), []byte(version+"\n"), 0o644)
+}
+
 // CurrentVersion returns (code, name) for known types; generic returns ("", "", nil).
 func CurrentVersion(info Info) (code, name string, err error) {
 	switch info.Type {
 	case "android-gradle":
 		return GradleVersion(info.Root, info.VersionFile)
+	case "go":
+		if info.VersionFile == "VERSION" || fileExists(info.Root, "VERSION") {
+			v, err := ReadVersionFile(info.Root, "VERSION")
+			if err != nil {
+				return "", "", err
+			}
+			return "", v, nil
+		}
+		return "", "", nil
 	default:
 		return "", "", nil
 	}

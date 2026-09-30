@@ -30,8 +30,11 @@ var (
 )
 
 // RenderHeader builds the status header line.
-func RenderHeader(project, version, dataRoot, status string) string {
+func RenderHeader(toolVersion, project, version, status string) string {
 	line := "ReleaseForge"
+	if toolVersion != "" {
+		line += " " + toolVersion
+	}
 	if project != "" {
 		line += " · " + project
 	}

@@ -12,8 +12,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ojilon/releaseforge/internal/build"
 	"github.com/ojilon/releaseforge/internal/config"
+	"github.com/ojilon/releaseforge/internal/git"
+	"github.com/ojilon/releaseforge/internal/history"
 	"github.com/ojilon/releaseforge/internal/project"
 	"github.com/ojilon/releaseforge/internal/storage"
+	"github.com/ojilon/releaseforge/internal/version"
 	rflog "github.com/ojilon/releaseforge/internal/log"
 	"github.com/ojilon/releaseforge/internal/tui"
 )
@@ -71,7 +74,7 @@ type Model struct {
 // New creates the root model.
 func New(dataRoot, projectDir string) Model {
 	ti := textinput.New()
-	ti.Placeholder = "type a command (help, status, scan, version, build, test, logs, quit)"
+	ti.Placeholder = "type a command (help, status, scan, recent, version, build, test, notes, logs, quit)"
 	ti.Focus()
 	ti.CharLimit = 512
 	ti.Prompt = "> "
@@ -81,7 +84,8 @@ func New(dataRoot, projectDir string) Model {
 	return m
 }
 
-// Run starts the interactive TUI.
+// Run starts the interactive TUI. The data root must be initialised
+// (run `releaseforge init`); otherwise it returns a clear error.
 func Run(dataRoot, projectDir string) error {
 	if strings.TrimSpace(dataRoot) == "" {
 		var err error
@@ -89,6 +93,9 @@ func Run(dataRoot, projectDir string) error {
 		if err != nil {
 			return err
 		}
+	}
+	if !storage.Exists(storage.GlobalConfigPath(dataRoot)) {
+		return fmt.Errorf("data root not initialised (%s missing) — run `releaseforge init` first", storage.GlobalConfigPath(dataRoot))
 	}
 	p := tea.NewProgram(New(dataRoot, projectDir), tea.WithAltScreen())
 	_, err := p.Run()
@@ -198,7 +205,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	header := tui.RenderHeader(m.projectName(), m.version, m.dataRoot, m.status)
+	header := tui.RenderHeader(version.ToolVersion, m.projectName(), m.version, m.status)
 	body := ""
 	if m.ready {
 		body = m.viewport.View()
@@ -206,7 +213,7 @@ func (m Model) View() string {
 		body = m.welcome()
 	}
 	bar := tui.BarStyle.Render(m.input.View())
-	help := tui.HelpStyle.Render("help · status · scan [path] · version · build debug|release · test unit · logs · quit")
+	help := tui.HelpStyle.Render("help · status · scan [path] · recent · version · build · test · notes · logs · quit")
 	return fmt.Sprintf("%s\n%s\n%s\n%s", header, body, bar, help)
 }
 
@@ -253,6 +260,8 @@ func (m *Model) exec(line string) bool {
 			path = args[0]
 		}
 		m.appendLine(m.doScan(path))
+	case "recent":
+		m.appendLine(m.doRecent())
 	case "version":
 		m.appendLine(m.doVersion(args))
 	case "build":
@@ -269,6 +278,12 @@ func (m *Model) exec(line string) bool {
 		m.appendLine(m.doTest(kind))
 	case "logs":
 		m.appendLine(m.doLogs())
+	case "notes":
+		ver := ""
+		if len(args) > 0 {
+			ver = args[0]
+		}
+		m.appendLine(m.doNotes(ver))
 	default:
 		m.appendLine(tui.ErrorStyle.Render("unknown command: " + verb + " (try `help`)"))
 	}
@@ -277,11 +292,13 @@ func (m *Model) exec(line string) bool {
 
 func helpText() string {
 	return `commands:
-  open|scan [path]      detect project, write config under data root
-  status                project, version, data root
-  version [--set X]     show or set version (android-gradle)
-  build debug|release   run gradle assemble + persist log
-  test unit|instrumented|all
+  open|scan [path]      detect project, write scan cache + config
+  recent                list recently opened projects
+  status                tool version, project, version, data root
+  version [--set X]     show or set version (gradle VERSION-free: VERSION file)
+  build debug|release   gradle assemble / go build + persist log
+  test [kind]           gradle tasks / go test ./...
+  notes [version]       draft notes from git history
   logs                  list recent persisted logs
   clear                 clear viewport
   quit                  exit`
@@ -294,18 +311,23 @@ func (m *Model) statusText() string {
 	}
 	ver := info.Type
 	if code, name, err := project.CurrentVersion(info); err == nil && name != "" {
-		ver = fmt.Sprintf("%s (code %s)", name, code)
+		if code != "" {
+			ver = fmt.Sprintf("%s (code %s)", name, code)
+		} else {
+			ver = name
+		}
 	}
-	return fmt.Sprintf("project: %s\nroot: %s\ntype: %s\nversion: %s\ndata-root: %s",
-		info.Name, info.Root, info.Type, ver, m.dataRoot)
+	return fmt.Sprintf("releaseforge: %s\nproject: %s\nroot: %s\ntype: %s\nversion: %s\ndata-root: %s",
+		version.ToolVersion, info.Name, info.Root, info.Type, ver, m.dataRoot)
 }
 
 func (m *Model) doScan(path string) string {
-	info, err := project.Detect(path)
+	snap, info, err := project.Scan(path)
 	if err != nil {
 		return tui.ErrorStyle.Render("scan: " + err.Error())
 	}
-	if err := storage.EnsureProjectLayout(m.dataRoot, info.Name); err != nil {
+	scanPath, err := project.WriteScan(m.dataRoot, snap)
+	if err != nil {
 		return tui.ErrorStyle.Render("scan: " + err.Error())
 	}
 	pcfg := config.ProjectConfig{Type: info.Type, Name: info.Name, Root: info.Root}
@@ -318,10 +340,28 @@ func (m *Model) doScan(path string) string {
 			return tui.ErrorStyle.Render("scan: " + err.Error())
 		}
 	}
+	if err := history.TouchRecent(m.dataRoot, info.Root, info.Name, info.Type, true); err != nil {
+		return tui.ErrorStyle.Render("scan: " + err.Error())
+	}
 	m.projectDir = info.Root
 	m.refreshProject()
 	m.status = "scanned " + info.Name
-	return fmt.Sprintf("scanned %s (%s) → %s", info.Name, info.Type, cfgPath)
+	return fmt.Sprintf("scanned %s (%s) → %s", info.Name, info.Type, scanPath)
+}
+
+func (m *Model) doRecent() string {
+	rf, err := history.LoadRecent(m.dataRoot)
+	if err != nil {
+		return tui.ErrorStyle.Render("recent: " + err.Error())
+	}
+	if len(rf.Items) == 0 {
+		return "no recent projects — run `scan <path>`"
+	}
+	var b strings.Builder
+	for i, e := range rf.Items {
+		fmt.Fprintf(&b, "%d. %s  [%s]  %s\n", i+1, e.Name, e.Type, e.Path)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m *Model) doVersion(args []string) string {
@@ -329,22 +369,38 @@ func (m *Model) doVersion(args []string) string {
 	if err != nil {
 		return tui.ErrorStyle.Render("version: " + err.Error())
 	}
-	if info.Type != "android-gradle" {
-		return fmt.Sprintf("version: type %q has no managed version file", info.Type)
-	}
-	if len(args) >= 2 && args[0] == "--set" {
-		next, err := project.SetGradleVersion(info.Root, info.VersionFile, args[1])
+	header := "releaseforge: " + version.ToolVersion + "\n"
+	switch info.Type {
+	case "android-gradle":
+		if len(args) >= 2 && args[0] == "--set" {
+			next, err := project.SetGradleVersion(info.Root, info.VersionFile, args[1])
+			if err != nil {
+				return tui.ErrorStyle.Render("version: " + err.Error())
+			}
+			m.refreshProject()
+			return header + fmt.Sprintf("versionCode: %s\nversionName: %s", next, args[1])
+		}
+		code, name, err := project.GradleVersion(info.Root, info.VersionFile)
 		if err != nil {
 			return tui.ErrorStyle.Render("version: " + err.Error())
 		}
-		m.refreshProject()
-		return fmt.Sprintf("versionCode: %s\nversionName: %s", next, args[1])
+		return header + fmt.Sprintf("versionCode: %s\nversionName: %s", code, name)
+	case "go":
+		if len(args) >= 2 && args[0] == "--set" {
+			if err := project.SetVersionFile(info.Root, "VERSION", args[1]); err != nil {
+				return tui.ErrorStyle.Render("version: " + err.Error())
+			}
+			m.refreshProject()
+			return header + fmt.Sprintf("version: %s (wrote VERSION, not committed)", args[1])
+		}
+		v, err := project.ReadVersionFile(info.Root, "VERSION")
+		if err != nil {
+			return tui.ErrorStyle.Render("version: " + err.Error())
+		}
+		return header + fmt.Sprintf("version: %s", v)
+	default:
+		return header + fmt.Sprintf("version: type %q has no managed version file", info.Type)
 	}
-	code, name, err := project.GradleVersion(info.Root, info.VersionFile)
-	if err != nil {
-		return tui.ErrorStyle.Render("version: " + err.Error())
-	}
-	return fmt.Sprintf("versionCode: %s\nversionName: %s", code, name)
 }
 
 func (m *Model) doBuild(variant string) string {
@@ -356,18 +412,32 @@ func (m *Model) doBuild(variant string) string {
 	if err != nil {
 		return tui.ErrorStyle.Render("build: " + err.Error())
 	}
-	if info.Type != "android-gradle" {
+	var prog string
+	var bargs []string
+	switch info.Type {
+	case "android-gradle":
+		prog = build.GradleWrapper(info.Root)
+		bargs = []string{"assembleDebug"}
+		if variant == "release" {
+			bargs = []string{"assembleRelease"}
+		}
+	case "go":
+		stamp := "dev"
+		if _, name, err := project.CurrentVersion(info); err == nil && name != "" {
+			stamp = name
+		}
+		out := filepath.Join(storage.BuildsDir(m.dataRoot, info.Name), build.GoBinaryName("releaseforge"))
+		if variant == "release" {
+			out = filepath.Join(storage.BuildsDir(m.dataRoot, info.Name), build.GoBinaryName("releaseforge-release"))
+		}
+		prog, bargs = "go", build.GoBuildArgs(info.Root, out, stamp, variant)
+	default:
 		return tui.ErrorStyle.Render("build: unsupported type " + info.Type)
-	}
-	task := "assembleDebug"
-	if variant == "release" {
-		task = "assembleRelease"
 	}
 	_ = storage.EnsureProjectLayout(m.dataRoot, info.Name)
 	logPath := rflog.LogPath(storage.LogsDir(m.dataRoot, info.Name), "build-"+variant)
-	wrapper := build.GradleWrapper(info.Root)
 	var lines []string
-	res := build.Run(wrapper, []string{task}, build.Options{
+	res := build.Run(prog, bargs, build.Options{
 		Dir: info.Root, LogPath: logPath,
 		OnLine: func(t string, _ bool) { lines = append(lines, t) },
 	})
@@ -395,25 +465,30 @@ func (m *Model) doTest(kind string) string {
 	if err != nil {
 		return tui.ErrorStyle.Render("test: " + err.Error())
 	}
-	if info.Type != "android-gradle" {
-		return tui.ErrorStyle.Render("test: unsupported type " + info.Type)
-	}
+	var prog string
 	var tasks []string
-	switch kind {
-	case "unit":
-		tasks = []string{":app:testDebugUnitTest"}
-	case "instrumented":
-		tasks = []string{":app:connectedDebugAndroidTest"}
-	case "all":
-		tasks = []string{":app:testDebugUnitTest", ":app:connectedDebugAndroidTest"}
+	switch info.Type {
+	case "android-gradle":
+		switch kind {
+		case "unit":
+			tasks = []string{":app:testDebugUnitTest"}
+		case "instrumented":
+			tasks = []string{":app:connectedDebugAndroidTest"}
+		case "all":
+			tasks = []string{":app:testDebugUnitTest", ":app:connectedDebugAndroidTest"}
+		default:
+			return tui.ErrorStyle.Render("test: want unit|instrumented|all")
+		}
+		prog = build.GradleWrapper(info.Root)
+	case "go":
+		prog, tasks = "go", build.GoTestArgs()
 	default:
-		return tui.ErrorStyle.Render("test: want unit|instrumented|all")
+		return tui.ErrorStyle.Render("test: unsupported type " + info.Type)
 	}
 	_ = storage.EnsureProjectLayout(m.dataRoot, info.Name)
 	logPath := rflog.LogPath(storage.LogsDir(m.dataRoot, info.Name), "test-"+kind)
-	wrapper := build.GradleWrapper(info.Root)
 	var lines []string
-	res := build.Run(wrapper, tasks, build.Options{
+	res := build.Run(prog, tasks, build.Options{
 		Dir: info.Root, LogPath: logPath,
 		OnLine: func(t string, _ bool) { lines = append(lines, t) },
 	})
@@ -455,4 +530,31 @@ func (m *Model) doLogs() string {
 		n++
 	}
 	return b.String()
+}
+
+func (m *Model) doNotes(ver string) string {
+	info, err := project.Detect(m.projectDir)
+	if err != nil {
+		return tui.ErrorStyle.Render("notes: " + err.Error())
+	}
+	var commits []git.Commit
+	if git.IsRepo(info.Root) {
+		prev := git.LatestTag(info.Root)
+		if cl, err := git.LogSince(info.Root, prev); err == nil {
+			commits = cl
+		}
+	}
+	ver = strings.TrimSpace(ver)
+	if ver == "" {
+		return git.DraftNotes(info.Name, "unreleased", commits, true)
+	}
+	verDir := storage.ReleaseVersionDir(m.dataRoot, info.Name, ver)
+	if err := os.MkdirAll(verDir, 0o755); err != nil {
+		return tui.ErrorStyle.Render("notes: " + err.Error())
+	}
+	path := filepath.Join(verDir, "notes.md")
+	if err := os.WriteFile(path, []byte(git.DraftNotes(info.Name, ver, commits, true)), 0o644); err != nil {
+		return tui.ErrorStyle.Render("notes: " + err.Error())
+	}
+	return fmt.Sprintf("notes: %s (%d commits since last tag)", path, len(commits))
 }

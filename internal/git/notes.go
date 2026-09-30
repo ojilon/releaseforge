@@ -112,6 +112,33 @@ func IsClean(dir string) bool {
 	return err == nil && strings.TrimSpace(out) == ""
 }
 
+// Origin returns the remote origin URL, or "" when absent.
+func Origin(dir string) string {
+	out, err := run(dir, "config", "--get", "remote.origin.url")
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
+// RecentTags returns up to n recent tags by creation date.
+func RecentTags(dir string, n int) []string {
+	out, err := run(dir, "tag", "-l", "--sort=-creatordate")
+	if err != nil || out == "" {
+		return nil
+	}
+	var tags []string
+	for _, l := range strings.Split(out, "\n") {
+		if t := strings.TrimSpace(l); t != "" {
+			tags = append(tags, t)
+			if n > 0 && len(tags) >= n {
+				break
+			}
+		}
+	}
+	return tags
+}
+
 // DraftNotes builds release notes markdown from commits since the previous tag.
 func DraftNotes(appName, version string, commits []Commit, prerelease bool) string {
 	kind := "release"

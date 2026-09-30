@@ -112,6 +112,16 @@ func HistoryFile(root string) string {
 	return filepath.Join(root, "history", "commands.jsonl")
 }
 
+// RecentFile returns <root>/history/recent-projects.json.
+func RecentFile(root string) string {
+	return filepath.Join(root, "history", "recent-projects.json")
+}
+
+// ScanFile returns <root>/projects/<name>/cache/scan.json.
+func ScanFile(root, project string) string {
+	return filepath.Join(CacheDir(root, project), "scan.json")
+}
+
 // GlobalCacheDir returns <root>/global-cache.
 func GlobalCacheDir(root string) string {
 	return filepath.Join(root, "global-cache")

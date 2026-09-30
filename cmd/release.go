@@ -28,21 +28,27 @@ var (
 
 var releaseCmd = &cobra.Command{
 	Use:   "release <version>",
-	Short: "Full release pipeline: version → test → build → package → sign → notes → tag → GitHub",
-	Long: `Orchestrates the same flow currently done by Conductino-Android scripts/release.py,
-generalised for all supported project types.
-
-Steps (Android):
-  1. set version (gradle.properties)
-  2. unit tests
+	Short: "Full release pipeline: version → test → build → package → notes → tag → GitHub",
+	Long: `Android Gradle:
+  1. set version (gradle.properties, code+1, no commit)
+  2. unit tests (unless --skip-tests)
   3. assembleDebug + assembleRelease
-  4. package into release/<version>/
-  5. sign release APK (apksigner + keystore)
-  6. generate notes from git history (template + commits)
+  4. package APKs into data-root releases/<version>/
+  5. sign release APK (password prompted once, never stored)
+  6. notes from git history
   7. zip artifacts
-  8. create annotated tag and GitHub release (gh)
+  8. tag v<version>, push, gh release create
 
-Flags control pre-release marking and optional skips.`,
+Go (e.g. ReleaseForge itself):
+  1. write VERSION file (no commit — commit manually)
+  2. go test ./... (unless --skip-tests)
+  3. go build -trimpath with version stamp into releases/<version>/
+  4. notes from git history
+  5. zip binary
+  6. tag v<version>, push, gh release create
+
+Without the gh CLI, release stops after the local tag + zip
+and reports the artifact paths (exit 0).`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		version := strings.TrimSpace(args[0])
@@ -53,141 +59,231 @@ Flags control pre-release marking and optional skips.`,
 		if err != nil {
 			return err
 		}
-		if info.Type != "android-gradle" {
+		switch info.Type {
+		case "android-gradle":
+			return releaseAndroid(info, version)
+		case "go":
+			return releaseGo(info, version)
+		default:
 			return fmt.Errorf("release: project type %q not supported yet", info.Type)
 		}
-		root, _, err := resolveDataRoot()
-		if err != nil {
-			return err
-		}
-		if err := storage.EnsureProjectLayout(root, info.Name); err != nil {
-			return err
-		}
-		verDir := storage.ReleaseVersionDir(root, info.Name, version)
-		appName := info.Name
-		var pcfg config.ProjectConfig
-		if loaded, err := config.LoadProject(storage.ProjectConfigPath(root, info.Name)); err == nil {
-			pcfg = loaded
-			if pcfg.Artifacts != nil && pcfg.Artifacts.AppName != "" {
-				appName = pcfg.Artifacts.AppName
-			}
-		}
+	},
+}
 
-		// Notes-only mode: draft notes from git history without building.
-		if releaseNotesOnly {
-			notesPath, err := writeNotes(info.Root, verDir, appName, version, releasePre)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("notes: %s\n", notesPath)
-			return nil
+func releaseAndroid(info project.Info, version string) error {
+	root, _, err := requireDataRoot()
+	if err != nil {
+		return err
+	}
+	if err := storage.EnsureProjectLayout(root, info.Name); err != nil {
+		return err
+	}
+	verDir := storage.ReleaseVersionDir(root, info.Name, version)
+	appName := info.Name
+	var pcfg config.ProjectConfig
+	if loaded, err := config.LoadProject(storage.ProjectConfigPath(root, info.Name)); err == nil {
+		pcfg = loaded
+		if pcfg.Artifacts != nil && pcfg.Artifacts.AppName != "" {
+			appName = pcfg.Artifacts.AppName
 		}
+	}
 
-		if git.IsRepo(info.Root) && !git.IsClean(info.Root) {
-			fmt.Fprintln(os.Stderr, "warning: working tree is dirty — release continues, but consider committing first")
-		}
-
-		fmt.Printf("==> version %s\n", version)
-		if _, err := project.SetGradleVersion(info.Root, info.VersionFile, version); err != nil {
-			return fmt.Errorf("set version: %w", err)
-		}
-
-		wrapper := build.GradleWrapper(info.Root)
-		run := func(prefix string, tasks ...string) error {
-			logPath := rflog.LogPath(storage.LogsDir(root, info.Name), prefix)
-			fmt.Printf("==> %s (log %s)\n", prefix, logPath)
-			res := build.Run(wrapper, tasks, build.Options{
-				Dir:     info.Root,
-				LogPath: logPath,
-				OnLine:  func(t string, _ bool) { fmt.Println(t) },
-			})
-			if !res.Success {
-				for _, e := range res.Errors {
-					fmt.Printf("  ! %s\n", e)
-				}
-				return fmt.Errorf("%s failed (exit %d, log %s)", prefix, res.ExitCode, res.LogPath)
-			}
-			return nil
-		}
-
-		if !releaseSkipTests {
-			if err := run("test-unit", ":app:testDebugUnitTest"); err != nil {
-				return err
-			}
-		}
-		if err := run("build-debug", "assembleDebug"); err != nil {
-			return err
-		}
-		if err := run("build-release", "assembleRelease"); err != nil {
-			return err
-		}
-
-		fmt.Printf("==> package %s\n", verDir)
-		debugApk, releaseApk, err := android.PackageRelease(info.Root, version, appName, verDir)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("  debug:   %s\n  release: %s\n", debugApk, releaseApk)
-
-		// Sign the release APK (password prompted once, never stored).
-		keystore, alias, apksignerBin := "conductino-release.jks", "conductino", ""
-		if pcfg.Signing != nil {
-			if pcfg.Signing.Keystore != "" {
-				keystore = pcfg.Signing.Keystore
-			}
-			if pcfg.Signing.Alias != "" {
-				alias = pcfg.Signing.Alias
-			}
-			if pcfg.Signing.Apksigner != nil {
-				apksignerBin = *pcfg.Signing.Apksigner
-			}
-		}
-		if !filepath.IsAbs(keystore) {
-			keystore = filepath.Join(info.Root, keystore)
-		}
-		var password string
-		form := huh.NewForm(huh.NewGroup(
-			huh.NewInput().Title("Keystore password").EchoMode(huh.EchoModePassword).Value(&password),
-		))
-		if err := form.Run(); err != nil {
-			return fmt.Errorf("password prompt: %w", err)
-		}
-		fmt.Printf("==> sign %s\n", releaseApk)
-		if err := android.SignApk(releaseApk, keystore, alias, password, apksignerBin); err != nil {
-			return err
-		}
-
+	if releaseNotesOnly {
 		notesPath, err := writeNotes(info.Root, verDir, appName, version, releasePre)
 		if err != nil {
 			return err
 		}
 		fmt.Printf("notes: %s\n", notesPath)
-
-		zipPath := filepath.Join(verDir, fmt.Sprintf("%s-%s.zip", appName, version))
-		if err := zipFiles(zipPath, []string{debugApk, releaseApk}); err != nil {
-			return fmt.Errorf("zip: %w", err)
-		}
-		fmt.Printf("zip: %s\n", zipPath)
-
-		tag := "v" + strings.TrimPrefix(version, "v")
-		if git.IsRepo(info.Root) {
-			fmt.Printf("==> tag %s\n", tag)
-			if err := github.CreateTag(info.Root, tag, fmt.Sprintf("Release %s", version)); err != nil {
-				return err
-			}
-			if err := github.PushTag(info.Root, tag); err != nil {
-				return err
-			}
-			fmt.Printf("==> github release %s\n", tag)
-			if err := github.CreateRelease(info.Root, tag, notesPath, []string{debugApk, releaseApk, zipPath}, releasePre); err != nil {
-				return err
-			}
-		} else {
-			fmt.Println("not a git repo — skipping tag + GitHub publish")
-		}
-		fmt.Printf("release %s done. Artifacts under %s\n", version, verDir)
 		return nil
-	},
+	}
+
+	if git.IsRepo(info.Root) && !git.IsClean(info.Root) {
+		fmt.Fprintln(os.Stderr, "warning: working tree is dirty — release continues, but consider committing first")
+	}
+
+	fmt.Printf("==> version %s (gradle.properties, not committed)\n", version)
+	if _, err := project.SetGradleVersion(info.Root, info.VersionFile, version); err != nil {
+		return fmt.Errorf("set version: %w", err)
+	}
+
+	wrapper := build.GradleWrapper(info.Root)
+	if !releaseSkipTests {
+		if err := runStep(root, info, "test-unit", wrapper, ":app:testDebugUnitTest"); err != nil {
+			return err
+		}
+	}
+	if err := runStep(root, info, "build-debug", wrapper, "assembleDebug"); err != nil {
+		return err
+	}
+	if err := runStep(root, info, "build-release", wrapper, "assembleRelease"); err != nil {
+		return err
+	}
+
+	fmt.Printf("==> package %s\n", verDir)
+	debugApk, releaseApk, err := android.PackageRelease(info.Root, version, appName, verDir)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  debug:   %s\n  release: %s\n", debugApk, releaseApk)
+
+	keystore, alias, apksignerBin := "conductino-release.jks", "conductino", ""
+	if pcfg.Signing != nil {
+		if pcfg.Signing.Keystore != "" {
+			keystore = pcfg.Signing.Keystore
+		}
+		if pcfg.Signing.Alias != "" {
+			alias = pcfg.Signing.Alias
+		}
+		if pcfg.Signing.Apksigner != nil {
+			apksignerBin = *pcfg.Signing.Apksigner
+		}
+	}
+	if !filepath.IsAbs(keystore) {
+		keystore = filepath.Join(info.Root, keystore)
+	}
+	var password string
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewInput().Title("Keystore password").EchoMode(huh.EchoModePassword).Value(&password),
+	))
+	if err := form.Run(); err != nil {
+		return fmt.Errorf("password prompt: %w", err)
+	}
+	fmt.Printf("==> sign %s\n", releaseApk)
+	if err := android.SignApk(releaseApk, keystore, alias, password, apksignerBin); err != nil {
+		return err
+	}
+
+	notesPath, err := writeNotes(info.Root, verDir, appName, version, releasePre)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("notes: %s\n", notesPath)
+
+	zipPath := filepath.Join(verDir, fmt.Sprintf("%s-%s.zip", appName, version))
+	if err := zipFiles(zipPath, []string{debugApk, releaseApk}); err != nil {
+		return fmt.Errorf("zip: %w", err)
+	}
+	fmt.Printf("zip: %s\n", zipPath)
+
+	return publishTagAndRelease(info.Root, version, notesPath, []string{debugApk, releaseApk, zipPath}, verDir)
+}
+
+func releaseGo(info project.Info, version string) error {
+	root, _, err := requireDataRoot()
+	if err != nil {
+		return err
+	}
+	if err := storage.EnsureProjectLayout(root, info.Name); err != nil {
+		return err
+	}
+	verDir := storage.ReleaseVersionDir(root, info.Name, version)
+
+	if releaseNotesOnly {
+		notesPath, err := writeNotes(info.Root, verDir, info.Name, version, releasePre)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("notes: %s\n", notesPath)
+		return nil
+	}
+
+	if git.IsRepo(info.Root) && !git.IsClean(info.Root) {
+		fmt.Fprintln(os.Stderr, "warning: working tree is dirty — release continues, but consider committing first")
+	}
+
+	fmt.Printf("==> version %s (VERSION file, not committed)\n", version)
+	if err := project.SetVersionFile(info.Root, "VERSION", version); err != nil {
+		return fmt.Errorf("set version: %w", err)
+	}
+
+	if !releaseSkipTests {
+		if err := runStep(root, info, "test", "go", build.GoTestArgs()...); err != nil {
+			return err
+		}
+	}
+
+	out := filepath.Join(verDir, build.GoBinaryName("releaseforge-"+version))
+	fmt.Printf("==> build release → %s\n", out)
+	logPath := rflog.LogPath(storage.LogsDir(root, info.Name), "build-release")
+	res := build.Run("go", build.GoBuildArgs(info.Root, out, version, "release"), build.Options{
+		Dir:     info.Root,
+		LogPath: logPath,
+		OnLine:  func(t string, _ bool) { fmt.Println(t) },
+	})
+	fmt.Printf("log: %s\n", res.LogPath)
+	if !res.Success {
+		for _, e := range res.Errors {
+			fmt.Printf("  ! %s\n", e)
+		}
+		return fmt.Errorf("build release failed (exit %d)", res.ExitCode)
+	}
+	fmt.Printf("binary: %s\n", out)
+
+	notesPath, err := writeNotes(info.Root, verDir, info.Name, version, releasePre)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("notes: %s\n", notesPath)
+
+	zipPath := filepath.Join(verDir, fmt.Sprintf("%s-%s.zip", info.Name, version))
+	if err := zipFiles(zipPath, []string{out}); err != nil {
+		return fmt.Errorf("zip: %w", err)
+	}
+	fmt.Printf("zip: %s\n", zipPath)
+
+	return publishTagAndRelease(info.Root, version, notesPath, []string{out, zipPath}, verDir)
+}
+
+// runStep executes a build/test step with live output + persisted log.
+func runStep(dataRoot string, info project.Info, prefix, prog string, args ...string) error {
+	logPath := rflog.LogPath(storage.LogsDir(dataRoot, info.Name), prefix)
+	fmt.Printf("==> %s (log %s)\n", prefix, logPath)
+	res := build.Run(prog, args, build.Options{
+		Dir:     info.Root,
+		LogPath: logPath,
+		OnLine:  func(t string, _ bool) { fmt.Println(t) },
+	})
+	if !res.Success {
+		for _, e := range res.Errors {
+			fmt.Printf("  ! %s\n", e)
+		}
+		return fmt.Errorf("%s failed (exit %d, log %s)", prefix, res.ExitCode, res.LogPath)
+	}
+	return nil
+}
+
+// publishTagAndRelease creates + pushes tag v<version>, then publishes via gh.
+// Without gh on PATH it stops after the local tag + zip (exit 0) and prints
+// the artifact paths so the user can publish manually later.
+func publishTagAndRelease(projectRoot, version, notesPath string, artifacts []string, verDir string) error {
+	tag := "v" + strings.TrimPrefix(version, "v")
+	if !git.IsRepo(projectRoot) {
+		fmt.Println("not a git repo — skipping tag + GitHub publish")
+		fmt.Printf("release %s done locally. Artifacts under %s\n", version, verDir)
+		return nil
+	}
+	fmt.Printf("==> tag %s\n", tag)
+	if err := github.CreateTag(projectRoot, tag, fmt.Sprintf("Release %s", version)); err != nil {
+		return err
+	}
+	if err := github.PushTag(projectRoot, tag); err != nil {
+		return fmt.Errorf("%w (local tag %s kept; push manually with `git push origin %s`)", err, tag, tag)
+	}
+	if !github.HasGH() {
+		fmt.Printf("gh CLI not found — stopping after local tag + artifacts (exit 0).\n")
+		fmt.Printf("tag: %s (pushed)\nnotes: %s\n", tag, notesPath)
+		for _, a := range artifacts {
+			fmt.Printf("artifact: %s\n", a)
+		}
+		fmt.Printf("publish later: gh release create %s --notes-file %s %s\n", tag, notesPath, strings.Join(artifacts, " "))
+		return nil
+	}
+	fmt.Printf("==> github release %s\n", tag)
+	if err := github.CreateRelease(projectRoot, tag, notesPath, artifacts, releasePre); err != nil {
+		return err
+	}
+	fmt.Printf("release %s done. Artifacts under %s\n", version, verDir)
+	return nil
 }
 
 func writeNotes(projectRoot, verDir, appName, version string, prerelease bool) (string, error) {
