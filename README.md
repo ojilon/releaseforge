@@ -1,71 +1,57 @@
 # ReleaseForge
 
-**Local release, build, test, and project-lifecycle TUI + CLI for Android and PC projects.**
+**Local release, build, test, and project-lifecycle TUI + CLI for any project on disk.**
 
-Single-binary Go tool (Cobra CLI + Charm Bubble Tea TUI) that owns:
+Single-binary Go tool (Cobra CLI + Charm Bubble Tea TUI). It does **not** care whether a repo is forked, original, or inspired by something else (Cooda, Java_ide from a-java-ide, Conductino-*, Wayer, practice repos, …). Point it at a folder; it scans, caches, and adapts.
 
-- Project scan & type detection (Gradle Android, Wails, CMake, Python, Java CLI, …)
-- Version read/write in the correct source of truth
-- Unit & instrumented tests with live logs and friendly error rendering
-- Target-aware builds (ABI filters, NDK, Gradle tasks, `wails build`, CMake)
-- APK packaging, signing (`apksigner`), install-to-device (`adb`)
-- Release notes from git history (AI later)
-- Tags + GitHub releases (`gh` / API)
-- Live log streaming, build reports, command history & suggestions
-- Configurable local data root (prefer `D:` on Windows) with install wizard
-- Metrics / dashboard panes inside the TUI
+## What it owns (full vision)
 
-Inspired by the interactive feel of Claude Code / Gemini CLI: persistent command bar, live updating panes, tabs that adapt to project state.
+- **Scan** a local folder: detect git, history, build tools (Gradle, CMake, Wails, …), frameworks, configs, version sources
+- **Local data root** (prefer `D:` on Windows) with per-project mirror cache that updates over time
+- Folder picker (native Windows dialog) + history of recently opened projects
+- Tests, target-aware builds, packaging, signing, install-to-device
+- Release notes from git history → tags → GitHub releases
+- Live logs, command history, in-app help (`-h` / `help` in the command bar)
+- Absorb and improve the existing Conductino-Android Python `scripts/` release pipeline
 
-## Status
+## Version roadmap (bootstrapping)
 
-Foundation commit. Documentation is complete and implementation-ready. Core packages are stubbed; Phase 1 targets the Android Gradle path (Conductino-Android / Wayer).
+| Version | Goal |
+|---------|------|
+| **0.0.1** | Local storage + scan + navigate. Pick a folder, detect git/tools/deps, show history, cache scan results, help in the TUI. Installable and usable immediately for exploration. |
+| **0.0.2** | Self-bootstrap: ReleaseForge can package, test, and release **itself** (and start applying the same pipeline to Android/other projects). |
+| later | Full Android sign/install, multi-type builds, metrics, optional AI notes. |
 
-## Quick start (once implemented)
+## Quick start (target after 0.0.1)
 
 ```bash
-go install github.com/ojilon/releaseforge@latest   # or build from source
-releaseforge init          # first-run wizard → choose data root (e.g. D:/ReleaseForgeData)
-releaseforge scan .        # detect project type + write local config
-releaseforge tui           # interactive TUI
-releaseforge build debug   # non-interactive CLI
-releaseforge release 0.1.0 --pre
+go build -o releaseforge.exe .
+./releaseforge init          # first run: choose data root (e.g. D:/ReleaseForgeData)
+./releaseforge tui           # or just ./releaseforge
+# In TUI: open → native folder picker → scan runs → Overview + Git + Tools panes
+# Type -h or help in the command bar for commands
 ```
-
-## Supported project families (non-forked)
-
-| Family | Example repos | Detection markers |
-|--------|---------------|-------------------|
-| Android Gradle + optional NDK/CMake | Conductino-Android, Wayer | `settings.gradle`, `app/build.gradle`, `gradle.properties`, optional `backend/CMakeLists.txt` |
-| Wails (Go + web frontend) | Conductino_ | `wails.json`, `main.go`, `frontend/` |
-| Pure CMake / C++ tools | Android-Scaffold-Studio | root `CMakeLists.txt`, `CMakePresets.json` |
-| Python companion | WayerPC | `*.py`, `requirements.txt` / `pyproject.toml` |
-| Java CLI | Foundain | simple Java sources |
-| Language practice | practice_go, practice_zig, practice_odin | language-specific |
-
-All share similar needs: version tracking, test/build commands, artifact collection, release notes, tags.
 
 ## Architecture (short)
 
-- **Cobra** — CLI surface for scripting and complex one-shot tasks (`build`, `test`, `release`, `install`, `scan`, `version`, `logs`).
-- **Bubble Tea + Lip Gloss + Bubbles + Huh** — full interactive TUI with persistent command input, live log viewport, adaptive tabs, forms/wizards.
-- **internal/** packages own domain logic (project detection, Gradle runner, signing, git, GitHub, storage, metrics). TUI and CLI are thin adapters.
-
-See `docs/` for the complete specification.
+- **Cobra** — scriptable CLI (`scan`, `init`, `status`, later `build` / `release`, …)
+- **Bubble Tea + Lip Gloss + Bubbles + Huh** — interactive TUI (command bar, panes, forms)
+- **internal/** — domain only (storage, config, project scan, git, build, …). CLI and TUI are thin adapters.
 
 ## Documentation map
 
 | Doc | Purpose |
 |-----|--------|
-| [docs/00-vision.md](docs/00-vision.md) | Goals, non-goals, UX principles |
-| [docs/01-architecture.md](docs/01-architecture.md) | Packages, data flow, Cobra + TUI split |
-| [docs/02-project-types.md](docs/02-project-types.md) | How every project family is detected and configured |
-| [docs/03-release-pipeline.md](docs/03-release-pipeline.md) | End-to-end release steps |
-| [docs/04-tui-design.md](docs/04-tui-design.md) | Claude-Code-like UX, tabs, command bar, live logs |
-| [docs/05-config-and-storage.md](docs/05-config-and-storage.md) | Data-root layout, wizard, schemas |
-| [docs/06-android-deep-dive.md](docs/06-android-deep-dive.md) | Real Gradle/CMake/signing/adb knowledge from Conductino-Android & Wayer |
-| [docs/07-wails-and-pc.md](docs/07-wails-and-pc.md) | Wails, CMake, Python surfaces |
-| [docs/08-implementation-plan.md](docs/08-implementation-plan.md) | Phased build order |
+| [docs/00-vision.md](docs/00-vision.md) | Goals (any local project), non-goals, UX |
+| [docs/01-architecture.md](docs/01-architecture.md) | Packages, data flow |
+| [docs/02-project-types.md](docs/02-project-types.md) | Detection markers (flexible, not limited to one org) |
+| [docs/03-release-pipeline.md](docs/03-release-pipeline.md) | Full release steps + Python-tool absorption |
+| [docs/04-tui-design.md](docs/04-tui-design.md) | Command bar, help, folder open, panes |
+| [docs/05-config-and-storage.md](docs/05-config-and-storage.md) | Data-root, per-project cache/mirror |
+| [docs/06-android-deep-dive.md](docs/06-android-deep-dive.md) | Gradle/CMake/signing from real Android work |
+| [docs/07-wails-and-pc.md](docs/07-wails-and-pc.md) | Wails / CMake / Python / generic |
+| [docs/08-implementation-plan.md](docs/08-implementation-plan.md) | **Agent follow this** — detailed 0.0.1 then 0.0.2 |
+| [docs/09-scan-foundation.md](docs/09-scan-foundation.md) | Scan algorithm, cache schema, git + tools detection |
 | [docs/reference/](docs/reference/) | Command cheatsheets |
 
 ## License
