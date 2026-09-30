@@ -1,0 +1,39 @@
+# Binaries
+/releaseforge
+/releaseforge.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test & coverage
+*.test
+*.out
+coverage.*
+
+# Go
+vendor/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Local data (never commit user data root)
+.data/
+ReleaseForgeData/
+
+# Build artifacts that may appear during development
+/dist/
+/bin/
+
+# Env / secrets
+.env
+*.jks
+*.keystore
+keystore.properties
+.ai.env
