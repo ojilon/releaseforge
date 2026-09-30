@@ -1,0 +1,36 @@
+{
+  "type": "android-gradle",
+  "name": "Conductino-Android",
+  "root": "D:/Dev/Conductino-Android",
+  "version": {
+    "file": "gradle.properties",
+    "code_key": "app.versionCode",
+    "name_key": "app.versionName"
+  },
+  "build": {
+    "gradle_wrapper": true,
+    "tasks": {
+      "unit_test": ":app:testDebugUnitTest",
+      "instrumented_test": ":app:connectedDebugAndroidTest",
+      "assemble_debug": "assembleDebug",
+      "assemble_release": "assembleRelease"
+    },
+    "abi_filters_key": "aurora.abiFilters",
+    "ndk_version_key": "ndkVersion"
+  },
+  "signing": {
+    "keystore": "conductino-release.jks",
+    "alias": "conductino",
+    "apksigner": null
+  },
+  "artifacts": {
+    "debug_apk": "app/build/outputs/apk/debug/app-debug.apk",
+    "release_unsigned": "app/build/outputs/apk/release/app-release-unsigned.apk",
+    "app_name": "Conductino-Study"
+  },
+  "github": {
+    "owner": "ojilon",
+    "repo": "Conductino-Android"
+  },
+  "mirror_release_dir_in_repo": true
+}

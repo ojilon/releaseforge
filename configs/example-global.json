@@ -1,0 +1,11 @@
+{
+  "data_root": "D:/ReleaseForgeData",
+  "github_token_env": "GITHUB_TOKEN",
+  "preferred_device": null,
+  "editor": "",
+  "ai": {
+    "enabled": false,
+    "provider": "",
+    "model": ""
+  }
+}

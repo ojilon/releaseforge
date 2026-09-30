@@ -1,0 +1,20 @@
+{
+  "type": "wails",
+  "name": "Conductino_",
+  "root": "D:/Dev/Conductino_",
+  "version": {
+    "file": "wails.json",
+    "json_path": "info.productVersion"
+  },
+  "build": {
+    "tasks": {
+      "dev": "wails dev",
+      "build": "wails build"
+    },
+    "output_dir": "build/bin"
+  },
+  "github": {
+    "owner": "ojilon",
+    "repo": "Conductino_"
+  }
+}
