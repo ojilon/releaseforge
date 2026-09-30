@@ -10,8 +10,8 @@
 
 ## Phase 1 — Android path (highest value)
 
-1. `storage` + `config` — data-root creation, load/save JSON.
-2. `project` detect for Android Gradle; version read/write matching `scripts/version.py`.
+1. [x] `storage` + `config` — data-root creation, load/save JSON.
+2. [ ] `project` detect for Android Gradle; version read/write matching `scripts/version.py`.
 3. `build.Runner` — run `gradlew` with live log stream + persist under data-root.
 4. `test` and `build` commands wired for unit tests + assembleDebug/Release.
 5. `android` package + sign (port sign.py / package.py logic) + adb install.

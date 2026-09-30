@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ojilon/releaseforge/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -52,6 +53,12 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(statusCmd)
+}
+
+// resolveDataRoot applies --data-root / --config / env / default precedence.
+// It returns the data root and the global.json path without creating anything.
+func resolveDataRoot() (root string, configPath string, err error) {
+	return config.DiscoverDataRoot(cfgFile, dataRoot)
 }
 
 // placeholder helpers so the tree compiles before full implementation
