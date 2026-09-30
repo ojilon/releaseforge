@@ -15,6 +15,10 @@ coverage.*
 # Go
 vendor/
 
+# Python reference scripts
+scripts/__pycache__/
+*.py[cod]
+
 # IDE / OS
 .idea/
 .vscode/
@@ -37,6 +41,4 @@ ReleaseForgeData/
 *.keystore
 keystore.properties
 .ai.env
-
-#config for scripts
 scripts/config.json

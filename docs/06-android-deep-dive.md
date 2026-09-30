@@ -1,101 +1,73 @@
-# Android deep-dive (from real repos)
+# Android deep-dive
 
-Knowledge extracted from **Conductino-Android** and **Wayer** so implementers do not need GitHub access.
+Concrete APK release behaviour is defined by the **in-repo** Python reference under [`scripts/`](../scripts/). Read those sources when implementing Go. Summary below for orientation.
 
-## Conductino-Android
+## Version (`gradle.properties`)
 
-### Version (`gradle.properties`)
+Implemented in [`scripts/version.py`](../scripts/version.py):
 
-```
-app.versionCode=4
-app.versionName=0.0.3_2
-ndkVersion=29.0.14206865
-aurora.abiFilters=arm64-v8a
-```
+- Keys: `app.versionCode`, `app.versionName`
+- Read via multiline regex
+- Set: `versionName` ← argument; `versionCode` ← current int + 1
 
-`scripts/version.py` behaviour:
+## Orchestration
 
-- Read code + name via regex on `gradle.properties`.
-- Set name to argument; set code to `current + 1`.
+[`scripts/release.py`](../scripts/release.py) steps:
 
-### App module (`app/build.gradle`)
+1. `set_version(version)`
+2. `testDebugUnitTest`
+3. `assembleDebug`
+4. `assembleRelease`
+5. `package_release(version)` — see package.py
+6. `sign_apk(...)` on the renamed release APK in `release/<version>/`
+7. `create_notes(version, release_type)`
+8. `create_zip(version)`
+9. `gh release create v<version> --title ... --notes-file ...` (+ `--prerelease`) + attach `*.apk` and `*.zip`
 
-- `compileSdk 36`, `minSdk 26`, `targetSdk 34` (properties also list higher targets).
-- `ndkVersion "29.0.14206865"`.
-- `versionCode` / `versionName` from project properties.
-- ABI filters from `aurora.abiFilters` (comma-separated).
-- External native build: CMake path `../backend/CMakeLists.txt`, version 3.22.1.
-- Release: minify + ProGuard.
-- Unit tests: Robolectric; `includeAndroidResources = true`.
+Gradle command resolution: prefer `gradlew` / `gradlew.bat` under project root; optional system gradle.
 
-### Native (`backend/CMakeLists.txt`)
+## Package paths ([`scripts/package.py`](../scripts/package.py))
 
-- `option(BUILD_AURORA_CORE ... OFF)` — native core optional.
-- C11, SQLite amalgamation, curl, lexbor when enabled.
-- Shared lib `aurora_core` with JNI bridge.
+| Source | Destination pattern in Python |
+|--------|-------------------------------|
+| `app/build/outputs/apk/debug/app-debug.apk` | `release/<ver>/<Name>-<ver>-debug.apk` |
+| `app/build/outputs/apk/release/app-release-unsigned.apk` | `release/<ver>/<Name>-<ver>-release.apk` |
 
-### Existing Python release tool (`scripts/`)
+Python hard-codes `Conductino-Study` as `<Name>`. **Go must use `artifacts.app_name` from project config (or scan).**
 
-| File | Role |
-|------|------|
-| `release.py` | Orchestrator: version → test → assembleDebug → assembleRelease → package → sign → notes → zip → `gh release create` |
-| `version.py` | Read/set versionCode + versionName |
-| `package.py` | Copy debug + unsigned release APKs into `release/<version>/` with renamed files |
-| `sign.py` | Find apksigner, prompt password, sign + verify |
-| `notes.py` | Create markdown template under `release_notes/v<version>.md` |
-| `zip_release.py` | Zip APKs in the version folder |
-| `config.py` | Load `scripts/config.json` (keystore_path, alias, gradle_user_home, apksigner_path) |
+## Signing ([`scripts/sign.py`](../scripts/sign.py))
 
-### apksigner resolution (sign.py)
+1. Custom apksigner path from config if set
+2. `PATH`
+3. `$ANDROID_HOME` / `$ANDROID_SDK_ROOT` → `build-tools/<newest>/apksigner(.bat)`
+4. Fallback command name
 
-1. Custom path from config if exists.
-2. `shutil.which("apksigner")`.
-3. `$ANDROID_HOME` or `$ANDROID_SDK_ROOT` → `build-tools/<newest>/apksigner(.bat)`.
-4. Fallback command name.
-
-Sign:
-
-```
+```text
 apksigner sign --ks <keystore> --ks-key-alias <alias> --ks-pass pass:<pwd> <apk>
 apksigner verify --verbose <apk>
 ```
 
-### Tests
+Password via interactive prompt only.
 
-```bash
-./gradlew :app:testDebugUnitTest
-./gradlew :app:connectedDebugAndroidTest
-```
+## Config ([`scripts/config.py`](../scripts/config.py))
 
-Docs: `docs/TESTING.md` (Robolectric unit tests, instrumented BrowserActivityTest).
+Optional `scripts/config.json` keys: `keystore_path`, `keystore_alias`, `gradle_user_home`, `apksigner_path`. Map into ReleaseForge project `signing` + build settings in `config.json` under the data root — not into committed secrets.
 
-### CI notes
+## Notes & zip
 
-GitHub Actions build debug + unsigned release, upload artifacts; separate auto-release workflow exists. Local tool is the control plane for signed releases and richer notes.
+- [`scripts/notes.py`](../scripts/notes.py) — markdown template only; improve with git log in Go
+- [`scripts/zip_release.py`](../scripts/zip_release.py) — zip all `*.apk` in the version dir
 
-## Wayer (Android)
+## Typical Gradle / native context (apps this pipeline targets)
 
-- Same Gradle + native pattern; native under `native/` (C++23).
-- Multi-ABI default documented: `arm64-v8a, armeabi-v7a, x86_64`.
-- `docs/RELEASE_AND_BUILD.md`, `keystore.properties.example`.
-- Unit tests via `./gradlew :app:testDebugUnitTest`.
+- Unit: `./gradlew :app:testDebugUnitTest`
+- Instrumented: `./gradlew :app:connectedDebugAndroidTest`
+- Often NDK + CMake (`backend/CMakeLists.txt` or `native/`), ABI filters in `gradle.properties`
+- JDK 17, Gradle wrapper, `adb` for install (install is **not** in the Python scripts; add in Go `install` command)
 
-## Common environment (developer machine)
+## Error surfaces to parse in the Go runner
 
-- Android SDK + command-line tools
-- NDK (r26+ / 29.x as pinned)
-- JDK 17
-- Gradle wrapper preferred (`gradlew` / `gradlew.bat`)
-- `adb` in PATH
-- `gh` authenticated for publish
-- Keystore file present (never commit)
-
-## Error surfaces to parse
-
-- Gradle compilation errors (`e: file:line`)
-- Test failures (JUnit XML under `app/build/test-results/`)
+- Gradle compilation (`e: file:line`)
+- Test failures (JUnit under `app/build/test-results/`)
 - CMake / NDK link errors
-- `UnsatisfiedLinkError` (native not built)
 - apksigner verification failures
-
-The build runner should capture full console output, persist it, and extract a short “headline” error list for the TUI card.
