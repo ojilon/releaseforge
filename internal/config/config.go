@@ -21,6 +21,7 @@ const (
 	TypeCMake         = "cmake"
 	TypePython        = "python"
 	TypeJavaCLI       = "java-cli"
+	TypeGo            = "go"
 	TypeGeneric       = "generic"
 )
 
@@ -32,6 +33,7 @@ func SupportedTypes() []string {
 		TypeCMake,
 		TypePython,
 		TypeJavaCLI,
+		TypeGo,
 		TypeGeneric,
 	}
 }
@@ -142,8 +144,8 @@ func (p ProjectConfig) Validate() error {
 	if !valid {
 		return fmt.Errorf("unknown project type %q (want one of %s)", p.Type, strings.Join(SupportedTypes(), ", "))
 	}
-	if strings.TrimSpace(p.Version.File) == "" {
-		return fmt.Errorf("version.file must not be empty")
+	if p.Type != TypeGeneric && strings.TrimSpace(p.Version.File) == "" {
+		return fmt.Errorf("version.file must not be empty (type %q)", p.Type)
 	}
 	return nil
 }

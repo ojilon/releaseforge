@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-
+	"github.com/ojilon/releaseforge/internal/app"
 	"github.com/ojilon/releaseforge/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -63,11 +61,13 @@ func resolveDataRoot() (root string, configPath string, err error) {
 
 // placeholder helpers so the tree compiles before full implementation
 func notImplemented(name string) error {
-	return fmt.Errorf("%s: not implemented yet — see docs/08-implementation-plan.md", name)
+	return app.NotImplemented(name)
 }
 
 func runTUI() error {
-	fmt.Fprintln(os.Stderr, "ReleaseForge TUI — foundation scaffold. Implement internal/app + internal/tui.")
-	fmt.Fprintln(os.Stderr, "See docs/04-tui-design.md and docs/08-implementation-plan.md.")
-	return notImplemented("tui")
+	root, _, err := resolveDataRoot()
+	if err != nil {
+		return err
+	}
+	return app.Run(root, projectDir)
 }
