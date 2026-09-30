@@ -53,7 +53,7 @@ aurora.abiFilters=arm64-v8a   # or comma-separated list
 
 **Native**
 
-- CMake may live at `backend/CMakeLists.txt`, `native/`, or under `app/src/main/cpp/`.
+- CMake may live at `backend/CMakeLists.txt`, `native/`, or under `app/src/main/cpp/`.(provide implementation to search for the locations of the cmake files)
 - NDK version and ABI filters must be readable and later editable from the tool.
 
 **Signing**
