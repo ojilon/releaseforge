@@ -26,6 +26,8 @@ func CreateRelease(dir, tag, notesFile string, artifacts []string, prerelease bo
 		return fmt.Errorf("notes file not found: %s", notesFile)
 	}
 	args := []string{"release", "create", tag, "--notes-file", notesFile}
+	// No --title flag: gh titles the release with the tag, which is what we
+	// want; the Python reference passed --title explicitly.
 	if prerelease {
 		args = append(args, "--prerelease")
 	}

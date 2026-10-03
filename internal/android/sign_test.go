@@ -42,6 +42,36 @@ func TestFindApksignerFallback(t *testing.T) {
 	}
 }
 
+func TestFindApksignerSdkNewest(t *testing.T) {
+	sdk := t.TempDir()
+	for _, v := range []string{"34.0.0", "35.0.0"} {
+		d := filepath.Join(sdk, "build-tools", v)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "apksigner.bat"), []byte("@echo off\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Isolate from any real apksigner on PATH so the SDK branch is exercised.
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("ANDROID_HOME", sdk)
+	t.Setenv("ANDROID_SDK_ROOT", "")
+	got := FindApksigner("")
+	want := filepath.Join(sdk, "build-tools", "35.0.0", "apksigner.bat")
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestFindApksignerCustomFirst(t *testing.T) {
+	custom := filepath.Join(t.TempDir(), "my-signer")
+	os.WriteFile(custom, []byte("x"), 0o644)
+	if got := FindApksigner(custom); got != custom {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestResolveApkPrefersConfig(t *testing.T) {
 	proj := t.TempDir()
 	std := filepath.Join(proj, "app", "build", "outputs", "apk", "debug")

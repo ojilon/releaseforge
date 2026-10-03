@@ -24,6 +24,7 @@ var (
 	releasePre       bool
 	releaseSkipTests bool
 	releaseNotesOnly bool
+	releaseDryRun    bool
 )
 
 var releaseCmd = &cobra.Command{
@@ -48,7 +49,8 @@ Go (e.g. ReleaseForge itself):
   6. tag v<version>, push, gh release create
 
 Without the gh CLI, release stops after the local tag + zip
-and reports the artifact paths (exit 0).`,
+and reports the artifact paths (exit 0). With --dry-run, print the full
+plan without changing anything (no version write, no processes, no tag).`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		version := strings.TrimSpace(args[0])
@@ -62,6 +64,18 @@ and reports the artifact paths (exit 0).`,
 		r, err := project.For(info)
 		if err != nil {
 			return fmt.Errorf("release: %w", err)
+		}
+		if releaseDryRun {
+			root, _, err := resolveDataRoot()
+			if err != nil {
+				return err
+			}
+			plan, err := dryRunPlan(info, r, version, root)
+			if err != nil {
+				return err
+			}
+			fmt.Print(plan)
+			return nil
 		}
 		switch r.(type) {
 		case project.GradleRunner:
@@ -194,7 +208,7 @@ func releaseAndroid(info project.Info, r project.Runner, version string) error {
 	fmt.Printf("notes: %s\n", notesPath)
 
 	zipPath := filepath.Join(verDir, fmt.Sprintf("%s-%s.zip", appName, version))
-	if err := zipFiles(zipPath, []string{debugApk, releaseApk}); err != nil {
+	if err := zipFiles(zipPath, []string{debugApk, releaseApk, notesPath}); err != nil {
 		return fmt.Errorf("zip: %w", err)
 	}
 	fmt.Printf("zip: %s\n", zipPath)
@@ -269,7 +283,7 @@ func releaseGo(info project.Info, r project.Runner, version string) error {
 	fmt.Printf("notes: %s\n", notesPath)
 
 	zipPath := filepath.Join(verDir, fmt.Sprintf("%s-%s.zip", info.Name, version))
-	if err := zipFiles(zipPath, []string{out}); err != nil {
+	if err := zipFiles(zipPath, []string{out, notesPath}); err != nil {
 		return fmt.Errorf("zip: %w", err)
 	}
 	fmt.Printf("zip: %s\n", zipPath)
@@ -306,6 +320,9 @@ func publishTagAndRelease(projectRoot, version, notesPath string, artifacts []st
 		fmt.Println("not a git repo — skipping tag + GitHub publish")
 		fmt.Printf("release %s done locally. Artifacts under %s\n", version, verDir)
 		return nil
+	}
+	if git.TagExists(projectRoot, tag) {
+		return fmt.Errorf("tag %s already exists — already released? see `gh release view %s`", tag, tag)
 	}
 	fmt.Printf("==> tag %s\n", tag)
 	if err := github.CreateTag(projectRoot, tag, fmt.Sprintf("Release %s", version)); err != nil {
@@ -381,4 +398,97 @@ func init() {
 	releaseCmd.Flags().BoolVar(&releasePre, "pre", false, "mark GitHub release as pre-release")
 	releaseCmd.Flags().BoolVar(&releaseSkipTests, "skip-tests", false, "skip test step (not recommended)")
 	releaseCmd.Flags().BoolVar(&releaseNotesOnly, "notes-only", false, "only generate/update release notes")
+	releaseCmd.Flags().BoolVar(&releaseDryRun, "dry-run", false, "print the release plan without changing anything")
+}
+
+// dryRunPlan renders the full release plan without side effects: no version
+// writes, no processes, no tags, no directories created.
+func dryRunPlan(info project.Info, r project.Runner, version, dataRoot string) (string, error) {
+	var b strings.Builder
+	tag := "v" + strings.TrimPrefix(version, "v")
+	verDir := storage.ReleaseVersionDir(dataRoot, info.Name, version)
+	fmt.Fprintf(&b, "dry run: release %s (%s)\n", version, info.Type)
+	if git.IsRepo(info.Root) {
+		state := "clean"
+		if !git.IsClean(info.Root) {
+			state = "dirty (would warn, then continue)"
+		}
+		fmt.Fprintf(&b, "  tree: %s\n", state)
+	} else {
+		b.WriteString("  tree: not a git repo (would skip tag + publish)\n")
+	}
+	if code, name, err := r.VersionRead(); err == nil {
+		next := ""
+		if _, ok := r.(project.GradleRunner); ok && info.VersionSource == project.SourceProperties && code != "" {
+			if n, err := project.IncrementCode(code); err == nil {
+				next = fmt.Sprintf("code %s → %s, ", code, n)
+			}
+		}
+		fmt.Fprintf(&b, "  version: write %s to %s (%scurrent %q, not committed)\n",
+			version, info.VersionFile, next, name)
+	} else {
+		fmt.Fprintf(&b, "  version: unreadable now (%v)\n", err)
+	}
+	unitArgs, err := r.TestArgs("unit")
+	if err != nil {
+		return "", err
+	}
+	if releaseSkipTests {
+		b.WriteString("  test: skipped (--skip-tests)\n")
+	} else {
+		fmt.Fprintf(&b, "  test: %s %s\n", r.Program(), strings.Join(unitArgs, " "))
+	}
+	appName := info.Name
+	if _, ok := r.(project.GradleRunner); ok {
+		if loaded, err := config.LoadProject(storage.ProjectConfigPath(dataRoot, info.Name)); err == nil {
+			if loaded.Artifacts != nil && loaded.Artifacts.AppName != "" {
+				appName = loaded.Artifacts.AppName
+			}
+		}
+		debugArgs, err := r.BuildArgs("debug", "", "")
+		if err != nil {
+			return "", err
+		}
+		releaseArgs, err := r.BuildArgs("release", "", "")
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&b, "  build debug: %s %s\n", r.Program(), strings.Join(debugArgs, " "))
+		fmt.Fprintf(&b, "  build release: %s %s\n", r.Program(), strings.Join(releaseArgs, " "))
+		fmt.Fprintf(&b, "  package: %s + %s\n",
+			filepath.Join(verDir, appName+"-"+version+"-debug.apk"),
+			filepath.Join(verDir, appName+"-"+version+"-release.apk"))
+		notesPath := filepath.Join(verDir, "notes.md")
+		zipPath := filepath.Join(verDir, appName+"-"+version+".zip")
+		fmt.Fprintf(&b, "  notes: %s\n", notesPath)
+		fmt.Fprintf(&b, "  zip: %s (+ notes.md)\n", zipPath)
+		fmt.Fprintf(&b, "  tag: %s\n", tag)
+		fmt.Fprintf(&b, "  publish: gh release create %s --notes-file %s [artifacts]%s\n",
+			tag, notesPath, preFlag())
+	} else {
+		out := filepath.Join(verDir, build.GoBinaryName(r.BinaryBaseName()+"-"+version))
+		buildArgs, err := r.BuildArgs("release", out, "")
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&b, "  build release: %s %s\n", r.Program(), strings.Join(buildArgs, " "))
+		notesPath := filepath.Join(verDir, "notes.md")
+		zipPath := filepath.Join(verDir, info.Name+"-"+version+".zip")
+		fmt.Fprintf(&b, "  notes: %s\n", notesPath)
+		fmt.Fprintf(&b, "  zip: %s (+ notes.md)\n", zipPath)
+		fmt.Fprintf(&b, "  tag: %s\n", tag)
+		fmt.Fprintf(&b, "  publish: gh release create %s --notes-file %s %s %s%s\n",
+			tag, notesPath, out, zipPath, preFlag())
+	}
+	if git.TagExists(info.Root, tag) {
+		fmt.Fprintf(&b, "  would abort: tag %s already exists\n", tag)
+	}
+	return b.String(), nil
+}
+
+func preFlag() string {
+	if releasePre {
+		return " --prerelease"
+	}
+	return ""
 }

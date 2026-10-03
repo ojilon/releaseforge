@@ -139,6 +139,12 @@ func RecentTags(dir string, n int) []string {
 	return tags
 }
 
+// TagExists reports whether tag exists locally.
+func TagExists(dir, tag string) bool {
+	out, err := run(dir, "rev-parse", "--verify", "refs/tags/"+tag)
+	return err == nil && strings.TrimSpace(out) != ""
+}
+
 // DraftNotes builds release notes markdown from commits since the previous tag.
 func DraftNotes(appName, version string, commits []Commit, prerelease bool) string {
 	kind := "release"

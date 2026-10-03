@@ -10,7 +10,7 @@
 - [x] 05 log-commands
 - [x] 09 android-build-test
 - [x] 10 adb-install-run
-- [ ] 11 sign-and-release-android
+- [x] 11 sign-and-release-android
 - [ ] 12 git-integration
 - [ ] 13 tui-architecture
 - [ ] 14 tui-layout-and-panels
