@@ -349,14 +349,15 @@ func publishTagAndRelease(projectRoot, version, notesPath string, artifacts []st
 }
 
 func writeNotes(projectRoot, verDir, appName, version string, prerelease bool) (string, error) {
-	var commits []git.Commit
+	var body string
 	if git.IsRepo(projectRoot) {
-		prev := git.LatestTag(projectRoot)
-		if cl, err := git.LogSince(projectRoot, prev); err == nil {
-			commits = cl
+		if groups, total, truncated, err := git.Changelog(projectRoot, git.MaxChangelogCommits); err == nil {
+			body = git.DraftGroupedNotes(appName, version, groups, total, truncated, prerelease)
 		}
 	}
-	body := git.DraftNotes(appName, version, commits, prerelease)
+	if body == "" {
+		body = git.DraftNotes(appName, version, nil, prerelease)
+	}
 	if err := os.MkdirAll(verDir, 0o755); err != nil {
 		return "", err
 	}

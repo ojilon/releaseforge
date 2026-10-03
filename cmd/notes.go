@@ -32,14 +32,18 @@ Without one, prints the draft to stdout. Never commits.`,
 		if err != nil {
 			return err
 		}
-		var commits []git.Commit
+		var total int
+		body := ""
 		if git.IsRepo(info.Root) {
-			prev := git.LatestTag(info.Root)
-			if cl, err := git.LogSince(info.Root, prev); err == nil {
-				commits = cl
+			groups, n, truncated, err := git.Changelog(info.Root, git.MaxChangelogCommits)
+			if err == nil {
+				total = n
+				body = git.DraftGroupedNotes(info.Name, firstNonEmpty(ver, "unreleased"), groups, n, truncated, true)
 			}
 		}
-		body := git.DraftNotes(info.Name, firstNonEmpty(ver, "unreleased"), commits, true)
+		if body == "" {
+			body = git.DraftNotes(info.Name, firstNonEmpty(ver, "unreleased"), nil, true)
+		}
 		if ver == "" {
 			fmt.Print(body)
 			return nil
@@ -56,7 +60,7 @@ Without one, prints the draft to stdout. Never commits.`,
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			return err
 		}
-		fmt.Printf("notes: %s (%d commits since last tag)\n", path, len(commits))
+		fmt.Printf("notes: %s (%d commits since last tag)\n", path, total)
 		return nil
 	},
 }

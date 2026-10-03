@@ -40,6 +40,11 @@ var statusCmd = &cobra.Command{
 		if git.IsRepo(info.Root) {
 			fmt.Printf("git:       %s @ %s (clean=%v, tag=%s)\n",
 				git.CurrentBranch(info.Root), git.Head(info.Root), git.IsClean(info.Root), git.LatestTag(info.Root))
+			if a, b, ok := git.AheadBehind(info.Root); ok {
+				fmt.Printf("upstream:  ahead %d, behind %d\n", a, b)
+			} else {
+				fmt.Printf("upstream:  none\n")
+			}
 		} else {
 			fmt.Printf("git:       not a repo\n")
 		}

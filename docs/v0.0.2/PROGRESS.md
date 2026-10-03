@@ -11,7 +11,7 @@
 - [x] 09 android-build-test
 - [x] 10 adb-install-run
 - [x] 11 sign-and-release-android
-- [ ] 12 git-integration
+- [x] 12 git-integration
 - [ ] 13 tui-architecture
 - [ ] 14 tui-layout-and-panels
 - [ ] 15 metrics-and-polish
