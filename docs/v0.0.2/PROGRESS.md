@@ -12,7 +12,7 @@
 - [x] 10 adb-install-run
 - [x] 11 sign-and-release-android
 - [x] 12 git-integration
-- [ ] 13 tui-architecture
+- [x] 13 tui-architecture
 - [ ] 14 tui-layout-and-panels
 - [ ] 15 metrics-and-polish
 

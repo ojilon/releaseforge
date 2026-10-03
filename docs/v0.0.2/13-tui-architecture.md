@@ -55,9 +55,9 @@ owns footer text; this doc implements the bindings).
 ## Steps
 
 1. History persistence first (smallest, independent) + tests.
-2. Convert instant commands to Cmd-returning (no behavior change) + test
-   the parser mapping verb → kind (pure function `parse(line)` extracted
-   for testability).
+2. Extract a pure `parse(line)` (verb + args) with a table test; keep
+   instant commands synchronous (append directly) — wrapping them in Cmds
+   would add churn for zero behavior change.
 3. Convert `build`/`test` to `Start` + drain Cmd + `esc` cancel.
 4. Ring-backed rendering with tick batching + tail-follow rule.
 5. `go test -race ./internal/app/` in acceptance (new goroutines).

@@ -36,10 +36,12 @@ func NotImplemented(name string) error {
 	return fmt.Errorf("%s: not implemented yet — see docs/08-implementation-plan.md", name)
 }
 
-// logMsg carries one streamed output line into the model.
-type logMsg struct {
-	text  string
-	isErr bool
+// ringCap bounds viewport memory; the log file stays complete.
+const ringCap = 2000
+
+// linesMsg carries a batch of streamed output lines into the model.
+type linesMsg struct {
+	lines []rflog.Line
 }
 
 // doneMsg marks completion of an async command.
@@ -59,6 +61,7 @@ type Model struct {
 
 	input    textinput.Model
 	viewport viewport.Model
+	ring     *rflog.Ring
 	ready    bool
 
 	history   []string
@@ -81,7 +84,11 @@ func New(dataRoot, projectDir string) Model {
 	ti.CharLimit = 512
 	ti.Prompt = "> "
 
-	m := Model{dataRoot: dataRoot, projectDir: projectDir, input: ti, status: "ready"}
+	ring := rflog.NewRing(ringCap)
+	hist := history.LoadCommands(dataRoot)
+	m := Model{dataRoot: dataRoot, projectDir: projectDir, input: ti,
+		ring: ring, status: "ready", history: hist, histIndex: len(hist)}
+	m.ring.Append(strings.TrimRight(m.welcome(), "\n"))
 	m.refreshProject()
 	return m
 }
@@ -144,7 +151,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		footerH := 3
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-headerH-footerH)
-			m.viewport.SetContent(m.welcome())
+			m.viewport.SetContent(strings.Join(m.ring.Snapshot(), "\n"))
+			m.viewport.GotoBottom()
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
@@ -152,9 +160,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.input.Width = msg.Width - 4
 
-	case logMsg:
-		m.viewport.SetContent(m.viewport.View() + "\n" + msg.text)
-		m.viewport.GotoBottom()
+	case linesMsg:
+		for _, ln := range msg.lines {
+			m.ring.Append(ln.Text)
+		}
+		m.render()
 		if m.handle != nil {
 			return m, m.waitLine()
 		}
@@ -211,6 +221,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.history = append(m.history, line)
 			m.histIndex = len(m.history)
+			history.AppendCommand(m.dataRoot, line)
 			m.input.SetValue("")
 			m.appendLine("> " + line)
 			quit, follow := m.exec(line)
@@ -218,6 +229,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			return m, follow
+		case tea.KeyCtrlL:
+			m.ring = rflog.NewRing(ringCap)
+			m.viewport.SetContent("")
+			return m, nil
 		}
 	}
 
@@ -253,29 +268,49 @@ func (m *Model) appendLine(s string) {
 	if !m.ready {
 		return
 	}
-	m.viewport.SetContent(m.viewport.View() + "\n" + s)
-	m.viewport.GotoBottom()
+	m.ring.Append(s)
+	m.render()
+}
+
+// render paints the ring tail with follow-mode: it sticks to the bottom only
+// when the user was already there, so reading scrollback survives new output.
+func (m *Model) render() {
+	if !m.ready {
+		return
+	}
+	follow := m.viewport.AtBottom()
+	m.viewport.SetContent(strings.Join(m.ring.Snapshot(), "\n"))
+	if follow {
+		m.viewport.GotoBottom()
+	}
 }
 
 func (m *Model) welcome() string {
 	return "ReleaseForge TUI — type `help` for commands, `scan <path>` to open a project.\n"
 }
 
-// exec runs a command bar line. It returns (quit, follow-up command).
-func (m *Model) exec(line string) (bool, tea.Cmd) {
+// parse splits a command-bar line into verb + args (pure, tested).
+func parse(line string) (verb string, args []string) {
 	fields := strings.Fields(line)
 	if len(fields) == 0 {
+		return "", nil
+	}
+	return strings.ToLower(fields[0]), fields[1:]
+}
+
+// exec runs a command bar line. It returns (quit, follow-up command).
+func (m *Model) exec(line string) (bool, tea.Cmd) {
+	verb, args := parse(line)
+	if verb == "" {
 		return false, nil
 	}
-	verb := strings.ToLower(fields[0])
-	args := fields[1:]
-
 	switch verb {
 	case "quit", "exit", "q":
 		return true, nil
 	case "help", "-h", "?":
 		m.appendLine(helpText())
 	case "clear":
+		m.ring = rflog.NewRing(ringCap)
 		m.viewport.SetContent("")
 	case "status":
 		m.appendLine(m.statusText())
@@ -319,25 +354,43 @@ func (m *Model) exec(line string) (bool, tea.Cmd) {
 	return false, nil
 }
 
-// waitLine returns a Cmd delivering the next streamed line, or the final
-// doneMsg once the process ends and its output is drained.
+// waitLine returns a Cmd delivering the next output batch, or the final
+// doneMsg once the process ends and its output is drained. Batching (first
+// line blocking, rest opportunistic up to 100) keeps fast output cheap.
 func (m *Model) waitLine() tea.Cmd {
 	h, okL, failL := m.handle, m.pendingOK, m.pendingErr
 	return func() tea.Msg {
-		ln, ok := <-h.Lines
+		first, ok := <-h.Lines
 		if !ok {
-			res := <-h.Done
-			if res.Success {
-				return doneMsg{label: okL}
-			}
-			var rep []string
-			if res.Report != nil {
-				rep = res.Report.Format()
-			}
-			return doneMsg{label: failL, err: firstError(res), report: rep}
+			return finishRun(h, okL, failL)
 		}
-		return logMsg{text: ln.Text, isErr: ln.IsErr}
+		batch := []rflog.Line{first}
+		for len(batch) < 100 {
+			select {
+			case ln, ok := <-h.Lines:
+				if !ok {
+					return linesMsg{lines: batch}
+				}
+				batch = append(batch, ln)
+			default:
+				return linesMsg{lines: batch}
+			}
+		}
+		return linesMsg{lines: batch}
 	}
+}
+
+// finishRun drains the result after output is exhausted.
+func finishRun(h *build.Handle, okL, failL string) tea.Msg {
+	res := <-h.Done
+	if res.Success {
+		return doneMsg{label: okL}
+	}
+	var rep []string
+	if res.Report != nil {
+		rep = res.Report.Format()
+	}
+	return doneMsg{label: failL, err: firstError(res), report: rep}
 }
 
 // firstError summarizes a failed Result for doneMsg.
@@ -359,6 +412,7 @@ func helpText() string {
   notes [version]       draft notes from git history
   logs                  list recent persisted logs
   clear                 clear viewport
+  esc cancels a running build/test · ctrl+l clears too
   quit                  exit`
 }
 
