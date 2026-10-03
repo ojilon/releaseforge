@@ -13,7 +13,7 @@
 - [x] 11 sign-and-release-android
 - [x] 12 git-integration
 - [x] 13 tui-architecture
-- [ ] 14 tui-layout-and-panels
+- [x] 14 tui-layout-and-panels
 - [ ] 15 metrics-and-polish
 
 Order per `docs/v0.0.2/00-overview-and-order.md`. Tick only when

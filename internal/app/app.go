@@ -67,6 +67,13 @@ type Model struct {
 	history   []string
 	histIndex int
 
+	// TUI presentation state (doc 14).
+	phase  string // idle|building|testing|failed|ok
+	width  int
+	branch string
+	dirty  bool
+	spark  string
+
 	// Active async run (nil when idle).
 	handle     *build.Handle
 	pendingOK  string
@@ -87,7 +94,8 @@ func New(dataRoot, projectDir string) Model {
 	ring := rflog.NewRing(ringCap)
 	hist := history.LoadCommands(dataRoot)
 	m := Model{dataRoot: dataRoot, projectDir: projectDir, input: ti,
-		ring: ring, status: "ready", history: hist, histIndex: len(hist)}
+		ring: ring, status: "ready", phase: "idle",
+		history: hist, histIndex: len(hist)}
 	m.ring.Append(strings.TrimRight(m.welcome(), "\n"))
 	m.refreshProject()
 	return m
@@ -106,7 +114,7 @@ func Run(dataRoot, projectDir string) error {
 	if !storage.Exists(storage.GlobalConfigPath(dataRoot)) {
 		return fmt.Errorf("data root not initialised (%s missing) — run `releaseforge init` first", storage.GlobalConfigPath(dataRoot))
 	}
-	p := tea.NewProgram(New(dataRoot, projectDir), tea.WithAltScreen())
+	p := tea.NewProgram(New(dataRoot, projectDir), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }
@@ -136,6 +144,19 @@ func (m *Model) refreshProject() {
 	} else {
 		m.version = info.Type
 	}
+	m.branch, m.dirty, m.spark = "", false, ""
+	if git.IsRepo(info.Root) {
+		m.branch = git.CurrentBranch(info.Root)
+		m.dirty = !git.IsClean(info.Root)
+		if snap, err := project.LoadScan(m.dataRoot, info.Name); err == nil &&
+			project.Fresh(m.dataRoot, info.Name, info.Root) {
+			var dates []string
+			for _, c := range snap.Git.RecentCommits {
+				dates = append(dates, c.Date)
+			}
+			m.spark = tui.Sparkline(tui.BucketCommits(dates, time.Now()))
+		}
+	}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -151,6 +172,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		footerH := 3
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-headerH-footerH)
+			m.viewport.MouseWheelEnabled = true
 			m.viewport.SetContent(strings.Join(m.ring.Snapshot(), "\n"))
 			m.viewport.GotoBottom()
 			m.ready = true
@@ -158,6 +180,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = msg.Height - headerH - footerH
 		}
+		m.width = msg.Width
 		m.input.Width = msg.Width - 4
 
 	case linesMsg:
@@ -173,6 +196,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case doneMsg:
 		m.running = false
 		m.handle = nil
+		if msg.err != nil {
+			m.phase = "failed"
+		} else {
+			m.phase = "ok"
+		}
 		m.status = msg.label
 		for _, l := range msg.report {
 			m.appendLine(l)
@@ -182,7 +210,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.appendLine("✓ " + msg.label)
 		}
-		m.appendLine("")
+		m.appendLine(tui.Rule(m.ruleWidth()))
 		m.refreshProject()
 
 	case tea.KeyMsg:
@@ -245,16 +273,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	header := tui.RenderHeader(version.ToolVersion, m.projectName(), m.version, m.status)
-	body := ""
-	if m.ready {
-		body = m.viewport.View()
-	} else {
-		body = m.welcome()
+	if !m.ready {
+		return tui.RenderHeader(version.ToolVersion, m.projectName(), m.version, m.status) + "\n" + m.welcome()
 	}
 	bar := tui.BarStyle.Render(m.input.View())
-	help := tui.HelpStyle.Render("help · status · scan [path] · recent · version · build · test · notes · logs · quit")
-	return fmt.Sprintf("%s\n%s\n%s\n%s", header, body, bar, help)
+	if m.width > 0 && m.width < 80 {
+		header := "ReleaseForge " + version.ToolVersion + " · " + m.projectName()
+		return header + "\n" + m.viewport.View() + "\n" + bar + "\n" +
+			tui.HelpStyle.Render("help|quit")
+	}
+	top := tui.PanelBorder.Render(
+		tui.RenderHeader(version.ToolVersion, m.projectName(), m.version, m.status) +
+			" " + tui.Pill(m.phase) + "\n" + m.contextLine())
+	return top + "\n" + m.viewport.View() + "\n" + bar + "\n" + m.footer()
+}
+
+// contextLine renders branch, dirtiness, and the commit sparkline.
+func (m *Model) contextLine() string {
+	line := "no git"
+	if m.branch != "" {
+		line = m.branch
+		if m.dirty {
+			line += " · ● dirty"
+		} else {
+			line += " · clean"
+		}
+	}
+	if m.spark != "" {
+		line += " · " + m.spark
+	}
+	return tui.HelpStyle.Render(line)
+}
+
+// footer renders state-dependent key hints.
+func (m *Model) footer() string {
+	switch m.phase {
+	case "building", "testing":
+		return tui.HelpStyle.Render("esc cancels · logs tail")
+	case "failed":
+		return tui.HelpStyle.Render("logs last to inspect · help · quit")
+	default:
+		return tui.HelpStyle.Render("help · status · scan [path] · recent · version · build · test · notes · logs · quit")
+	}
+}
+
+// ruleWidth bounds separator rendering to sane widths.
+func (m *Model) ruleWidth() int {
+	if m.width >= 80 {
+		return m.width
+	}
+	return 80
 }
 
 func (m *Model) projectName() string {
@@ -587,6 +655,7 @@ func (m *Model) doBuild(variant string) (string, tea.Cmd) {
 	m.handle = h
 	m.running = true
 	m.status = "building " + variant
+	m.phase = "building"
 	m.pendingOK, m.pendingErr = "build "+variant+" ok — log "+logPath, "build "+variant
 	m.refreshProject()
 	extra := ""
@@ -622,6 +691,7 @@ func (m *Model) doTest(kind string) (string, tea.Cmd) {
 	m.handle = h
 	m.running = true
 	m.status = "testing " + kind
+	m.phase = "testing"
 	m.pendingOK, m.pendingErr = "test "+kind+" ok — log "+logPath, "test "+kind
 	return fmt.Sprintf("started test %s (log %s, esc cancels)", kind, logPath), m.waitLine()
 }
