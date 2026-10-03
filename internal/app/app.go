@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -61,6 +62,11 @@ type Model struct {
 
 	history   []string
 	histIndex int
+
+	// Active async run (nil when idle).
+	handle     *build.Handle
+	pendingOK  string
+	pendingErr string
 
 	// pending async run
 	running bool
@@ -148,9 +154,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logMsg:
 		m.viewport.SetContent(m.viewport.View() + "\n" + msg.text)
 		m.viewport.GotoBottom()
+		if m.handle != nil {
+			return m, m.waitLine()
+		}
+		return m, nil
 
 	case doneMsg:
 		m.running = false
+		m.handle = nil
 		m.status = msg.label
 		if msg.err != nil {
 			m.appendLine(tui.ErrorStyle.Render("✗ " + msg.label + ": " + msg.err.Error()))
@@ -164,6 +175,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
+		case tea.KeyEsc:
+			if m.handle != nil {
+				m.handle.Cancel()
+				m.appendLine("(cancelling…)")
+			}
+			return m, nil
 		case tea.KeyUp:
 			if len(m.history) > 0 {
 				if m.histIndex > 0 {
@@ -192,10 +209,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.histIndex = len(m.history)
 			m.input.SetValue("")
 			m.appendLine("> " + line)
-			if quit := m.exec(line); quit {
+			quit, follow := m.exec(line)
+			if quit {
 				return m, tea.Quit
 			}
-			return m, nil
+			return m, follow
 		}
 	}
 
@@ -239,18 +257,18 @@ func (m *Model) welcome() string {
 	return "ReleaseForge TUI — type `help` for commands, `scan <path>` to open a project.\n"
 }
 
-// exec runs a command bar line. Returns true when the TUI should quit.
-func (m *Model) exec(line string) bool {
+// exec runs a command bar line. It returns (quit, follow-up command).
+func (m *Model) exec(line string) (bool, tea.Cmd) {
 	fields := strings.Fields(line)
 	if len(fields) == 0 {
-		return false
+		return false, nil
 	}
 	verb := strings.ToLower(fields[0])
 	args := fields[1:]
 
 	switch verb {
 	case "quit", "exit", "q":
-		return true
+		return true, nil
 	case "help", "-h", "?":
 		m.appendLine(helpText())
 	case "clear":
@@ -272,13 +290,17 @@ func (m *Model) exec(line string) bool {
 		if len(args) > 0 {
 			variant = args[0]
 		}
-		m.appendLine(m.doBuild(variant))
+		s, c := m.doBuild(variant)
+		m.appendLine(s)
+		return false, c
 	case "test":
 		kind := "unit"
 		if len(args) > 0 {
 			kind = args[0]
 		}
-		m.appendLine(m.doTest(kind))
+		s, c := m.doTest(kind)
+		m.appendLine(s)
+		return false, c
 	case "logs":
 		m.appendLine(m.doLogs())
 	case "notes":
@@ -290,7 +312,32 @@ func (m *Model) exec(line string) bool {
 	default:
 		m.appendLine(tui.ErrorStyle.Render("unknown command: " + verb + " (try `help`)"))
 	}
-	return false
+	return false, nil
+}
+
+// waitLine returns a Cmd delivering the next streamed line, or the final
+// doneMsg once the process ends and its output is drained.
+func (m *Model) waitLine() tea.Cmd {
+	h, okL, failL := m.handle, m.pendingOK, m.pendingErr
+	return func() tea.Msg {
+		ln, ok := <-h.Lines
+		if !ok {
+			res := <-h.Done
+			if res.Success {
+				return doneMsg{label: okL}
+			}
+			return doneMsg{label: failL, err: firstError(res)}
+		}
+		return logMsg{text: ln.Text, isErr: ln.IsErr}
+	}
+}
+
+// firstError summarizes a failed Result for doneMsg.
+func firstError(res build.Result) error {
+	if len(res.Errors) > 0 {
+		return fmt.Errorf("%s", res.Errors[0])
+	}
+	return fmt.Errorf("exit %d", res.ExitCode)
 }
 
 func helpText() string {
@@ -454,85 +501,67 @@ func (m *Model) doVersion(args []string) string {
 	return header + fmt.Sprintf("version: %s", name)
 }
 
-func (m *Model) doBuild(variant string) string {
+func (m *Model) doBuild(variant string) (string, tea.Cmd) {
 	variant = strings.ToLower(strings.TrimSpace(variant))
-	if variant != "debug" && variant != "release" {
-		return tui.ErrorStyle.Render("build: want debug|release")
-	}
 	info, err := project.Detect(m.projectDir)
 	if err != nil {
-		return tui.ErrorStyle.Render("build: " + err.Error())
+		return tui.ErrorStyle.Render("build: " + err.Error()), nil
 	}
 	r, err := project.For(info)
 	if err != nil {
-		return tui.ErrorStyle.Render("build: " + err.Error())
+		return tui.ErrorStyle.Render("build: " + err.Error()), nil
+	}
+	if m.handle != nil {
+		return "a build/test is already running (esc cancels)", nil
 	}
 	_ = storage.EnsureProjectLayout(m.dataRoot, info.Name)
 	out := r.BuildOutput(m.dataRoot, variant)
 	bargs, err := r.BuildArgs(variant, out)
 	if err != nil {
-		return tui.ErrorStyle.Render("build: " + err.Error())
+		return tui.ErrorStyle.Render("build: " + err.Error()), nil
 	}
 	logPath := rflog.LogPath(storage.LogsDir(m.dataRoot, info.Name), "build-"+variant)
-	var lines []string
-	res := build.Run(r.Program(), bargs, build.Options{
-		Dir: info.Root, LogPath: logPath,
-		OnLine: func(t string, _ bool) { lines = append(lines, t) },
-	})
-	// replay captured lines into viewport (bounded)
-	start := 0
-	if len(lines) > 200 {
-		start = len(lines) - 200
-		lines = append(lines[:0:0], lines[start:]...)
-		m.appendLine(fmt.Sprintf("(... %d earlier lines in %s)", start, logPath))
-	}
-	for _, l := range lines {
-		m.appendLine(l)
-	}
-	if !res.Success {
-		m.status = "build failed"
-		return tui.ErrorStyle.Render(fmt.Sprintf("build %s FAILED — log %s", variant, res.LogPath))
-	}
-	m.status = "build " + variant + " ok"
+	h := build.Start(r.Program(), bargs, build.Options{Dir: info.Root, LogPath: logPath})
+	m.handle = h
+	m.running = true
+	m.status = "building " + variant
+	m.pendingOK, m.pendingErr = "build "+variant+" ok — log "+logPath, "build "+variant
 	m.refreshProject()
-	return fmt.Sprintf("build %s ok — log %s", variant, res.LogPath)
+	extra := ""
+	if out != "" {
+		extra = " → " + out
+	}
+	return fmt.Sprintf("started build %s%s (log %s, esc cancels)", variant, extra, logPath), m.waitLine()
 }
 
-func (m *Model) doTest(kind string) string {
+func (m *Model) doTest(kind string) (string, tea.Cmd) {
 	info, err := project.Detect(m.projectDir)
 	if err != nil {
-		return tui.ErrorStyle.Render("test: " + err.Error())
+		return tui.ErrorStyle.Render("test: " + err.Error()), nil
 	}
 	r, err := project.For(info)
 	if err != nil {
-		return tui.ErrorStyle.Render("test: " + err.Error())
+		return tui.ErrorStyle.Render("test: " + err.Error()), nil
+	}
+	if m.handle != nil {
+		return "a build/test is already running (esc cancels)", nil
 	}
 	tasks, err := r.TestArgs(kind)
 	if err != nil {
-		return tui.ErrorStyle.Render("test: " + err.Error())
+		return tui.ErrorStyle.Render("test: " + err.Error()), nil
 	}
 	_ = storage.EnsureProjectLayout(m.dataRoot, info.Name)
 	logPath := rflog.LogPath(storage.LogsDir(m.dataRoot, info.Name), "test-"+kind)
-	var lines []string
-	res := build.Run(r.Program(), tasks, build.Options{
-		Dir: info.Root, LogPath: logPath,
-		OnLine: func(t string, _ bool) { lines = append(lines, t) },
-	})
-	start := 0
-	if len(lines) > 200 {
-		start = len(lines) - 200
-		lines = append(lines[:0:0], lines[start:]...)
-		m.appendLine(fmt.Sprintf("(... %d earlier lines in %s)", start, logPath))
+	timeout := time.Duration(0)
+	if kind == "instrumented" || kind == "all" {
+		timeout = 30 * time.Minute
 	}
-	for _, l := range lines {
-		m.appendLine(l)
-	}
-	if !res.Success {
-		m.status = "test failed"
-		return tui.ErrorStyle.Render(fmt.Sprintf("test %s FAILED — log %s", kind, res.LogPath))
-	}
-	m.status = "test " + kind + " ok"
-	return fmt.Sprintf("test %s ok — log %s", kind, res.LogPath)
+	h := build.Start(r.Program(), tasks, build.Options{Dir: info.Root, LogPath: logPath, Timeout: timeout})
+	m.handle = h
+	m.running = true
+	m.status = "testing " + kind
+	m.pendingOK, m.pendingErr = "test "+kind+" ok — log "+logPath, "test "+kind
+	return fmt.Sprintf("started test %s (log %s, esc cancels)", kind, logPath), m.waitLine()
 }
 
 func (m *Model) doLogs() string {

@@ -3,6 +3,7 @@ package build
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	rflog "github.com/ojilon/releaseforge/internal/log"
 )
@@ -23,16 +26,30 @@ type Result struct {
 	Command  string
 }
 
-// Options controls a Run invocation.
+// Options controls a Run/Start invocation.
 type Options struct {
 	// Dir is the working directory.
 	Dir string
 	// LogPath is the file to persist output to. If empty, output is not persisted.
 	LogPath string
 	// OnLine is called for every output line (stdout and stderr).
+	// Only Run calls it; Start delivers lines on Handle.Lines instead.
 	OnLine func(text string, isErr bool)
 	// Env extra environment entries.
 	Env []string
+	// Timeout kills the process after the duration (0 = none).
+	Timeout time.Duration
+}
+
+// Handle is a running process started by Start.
+type Handle struct {
+	// Lines carries every output line until closed. Always drained by the
+	// owner (Run drains; the TUI chains one-line reads).
+	Lines <-chan rflog.Line
+	// Done receives the final Result exactly once.
+	Done <-chan Result
+	// Cancel kills the process; the Result reports "cancelled".
+	Cancel context.CancelFunc
 }
 
 // errorPatterns are matched case-insensitively to extract headline errors.
@@ -64,8 +81,54 @@ func ExtractErrors(lines []string, max int) []string {
 	return out
 }
 
-// Run executes name args in opts.Dir, streams output, persists to LogPath.
+// Start executes name args in opts.Dir without blocking, streaming output on
+// Handle.Lines and the final Result on Handle.Done. The owner must drain
+// Lines to completion; Cancel aborts the process.
+func Start(name string, args []string, opts Options) *Handle {
+	ctx, cancel := context.WithCancel(context.Background())
+	lines := make(chan rflog.Line, 1024)
+	done := make(chan Result, 1)
+	var timer *time.Timer
+	var timedOut atomic.Bool
+	if opts.Timeout > 0 {
+		d := opts.Timeout
+		timer = time.AfterFunc(d, func() { timedOut.Store(true); cancel() })
+	}
+	go func() {
+		defer close(lines)
+		if timer != nil {
+			defer timer.Stop()
+		}
+		res := execute(ctx, name, args, opts, func(text string, isErr bool) {
+			lines <- rflog.Line{Text: text, IsErr: isErr}
+		})
+		if ctx.Err() != nil {
+			res.Success = false
+			if timedOut.Load() {
+				res.Errors = append([]string{fmt.Sprintf("timed out after %s", opts.Timeout)}, res.Errors...)
+			} else {
+				res.Errors = append([]string{"cancelled"}, res.Errors...)
+			}
+		}
+		done <- res
+	}()
+	return &Handle{Lines: lines, Done: done, Cancel: cancel}
+}
+
+// Run executes name args in opts.Dir, streams output via OnLine, persists to
+// LogPath, and blocks until the process exits.
 func Run(name string, args []string, opts Options) Result {
+	h := Start(name, args, opts)
+	for ln := range h.Lines {
+		if opts.OnLine != nil {
+			opts.OnLine(ln.Text, ln.IsErr)
+		}
+	}
+	return <-h.Done
+}
+
+// execute runs the process once; emit receives every output line.
+func execute(ctx context.Context, name string, args []string, opts Options, emit func(string, bool)) Result {
 	display := name + " " + strings.Join(args, " ")
 	var stream *rflog.Stream
 	if opts.LogPath != "" {
@@ -76,16 +139,14 @@ func Run(name string, args []string, opts Options) Result {
 			s.Write("$ "+display+" (dir="+opts.Dir+")", false)
 		}
 	}
-	emit := func(text string, isErr bool) {
+	sink := func(text string, isErr bool) {
 		if stream != nil {
 			stream.Write(text, isErr)
 		}
-		if opts.OnLine != nil {
-			opts.OnLine(text, isErr)
-		}
+		emit(text, isErr)
 	}
 
-	cmd := exec.Command(name, args...)
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = opts.Dir
 	if len(opts.Env) > 0 {
 		cmd.Env = append(os.Environ(), opts.Env...)
@@ -99,7 +160,7 @@ func Run(name string, args []string, opts Options) Result {
 		return Result{ExitCode: -1, LogPath: opts.LogPath, Command: display, Errors: []string{err.Error()}}
 	}
 	if err := cmd.Start(); err != nil {
-		emit(fmt.Sprintf("failed to start: %v", err), true)
+		sink(fmt.Sprintf("failed to start: %v", err), true)
 		return Result{ExitCode: -1, LogPath: opts.LogPath, Command: display, Errors: []string{err.Error()}}
 	}
 	var lines []string
@@ -117,7 +178,7 @@ func Run(name string, args []string, opts Options) Result {
 		for sc.Scan() {
 			t := sc.Text()
 			appendLine(t)
-			emit(t, false)
+			sink(t, false)
 		}
 		done <- struct{}{}
 	}()
@@ -127,7 +188,7 @@ func Run(name string, args []string, opts Options) Result {
 		for sc.Scan() {
 			t := sc.Text()
 			appendLine(t)
-			emit(t, true)
+			sink(t, true)
 		}
 		done <- struct{}{}
 	}()

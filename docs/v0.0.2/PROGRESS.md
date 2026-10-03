@@ -5,7 +5,7 @@
 - [x] 07 scan-cache-and-config
 - [x] 06 android-scan-gradle
 - [x] 08 version-and-bump
-- [ ] 03 async-process-and-logstream
+- [x] 03 async-process-and-logstream
 - [ ] 04 error-parsing
 - [ ] 05 log-commands
 - [ ] 09 android-build-test

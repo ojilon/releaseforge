@@ -26,12 +26,12 @@ Extend `internal/build` (stdlib only, no new deps):
     func Run(...) Result  // kept as blocking wrapper over Start (CLI keeps working)
 
 `Options` gains `Timeout time.Duration` (0 = none; CLI default none, TUI
-passes e.g. 30m for instrumented). `Cancel` kills the process
-(`cmd.Process.Kill`; no SIGTERM dance on Windows). `Stream` becomes the hub:
-one writer goroutine, subscribers get a bounded channel (256, drop-oldest —
-never block the writer). `Lines()` is replaced for live use by a small
-ring buffer type (`type Ring struct …​`, cap 2000, `Append/Snapshot`) living
-in `internal/log`; file persistence unchanged.
+passes 30m for instrumented/all). `Cancel` kills the process via
+`exec.CommandContext` (no SIGTERM dance on Windows). Lines travel on a
+dedicated buffered channel on the `Handle` — `Stream` stays a file+memory
+writer only (no subscription machinery; doc 01 removed it and it stays
+removed). Timeout/cancel are reported as headline errors (`timed out after
+…​` / `cancelled`) prepended to `Result.Errors`.
 
 TUI (wiring only — full architecture is doc 13): `exec` returns a `tea.Cmd`
 that drains `Handle.Lines` into `lineMsg` and posts `doneMsg` at the end;
@@ -41,20 +41,26 @@ blocking `Run` — no behavior change there.
 ## Files to touch
 
 - `internal/build/runner.go` (`Start`, `Handle`, `Timeout`, kill path)
-- `internal/log/stream.go` (drop-oldest subscribers, `Ring` type)
-- `internal/app/app.go` (minimal: send the existing `logMsg`/`doneMsg` for
-  real; `esc` cancels) — full message/UX design stays in doc 13
+- `internal/log/stream.go` (add `Ring` type; `Stream` untouched otherwise)
+- `internal/app/app.go` (`exec` returns `(bool, tea.Cmd)`; `doBuild/doTest`
+  spawn + drain chain; `esc` cancels; second-run guard)
 - `cmd/release.go:runStep` unchanged (still blocking `Run`)
 
 ## Steps
 
-1. Add `Ring` + tests.
-2. Change `Stream` fan-out to drop-oldest; test with a slow subscriber.
-3. Extract pipe-reading from `Run` into `Start`; `Run` = `Start` + drain.
-4. Add `Cancel` (kill) + `Timeout` (timer → Cancel); test both with a
-   sleeper process (`go run` a temp program or `ping -n`).
-5. Wire TUI `doBuild/doTest` to `Start`: lines → `logMsg`, end → `doneMsg`,
-   `esc` → `Cancel`. Keep the 200-line replay cap for now.
+1. Add `Ring` (cap 2000, `Append/Snapshot/Len`) to `internal/log` + tests.
+   (TUI adoption of `Ring` stays in doc 13; here it is specified + tested.)
+2. Split `Run` into `Start` (goroutine, `Handle{Lines,Done,Cancel}`) +
+   blocking `Run` wrapper that drains `Lines` into `OnLine` (CLI behavior
+   unchanged, byte for byte).
+3. Add `Cancel` (via `CommandContext`) + `Timeout` (timer → cancel, reported
+   as `timed out after …​`) + tests with a sleeper process.
+4. Wire TUI `doBuild/doTest` to `Start`: immediate `started …​ (esc cancels)`
+   line, then a chained one-line-at-a-time drain (`lineMsg` → existing
+   append path, re-armed each message; `doneMsg` at close, reusing the
+   existing handler). No post-hoc replay — lines are already on screen.
+   `esc` cancels the active handle; starting a second build/test while one
+   runs is refused with a hint.
 
 ## Tests to add
 
