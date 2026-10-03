@@ -75,11 +75,9 @@ var installCmd = &cobra.Command{
 		if _, err := os.Stat(apk); err != nil {
 			return fmt.Errorf("install: apk not found: %s (build first)", apk)
 		}
-		serial := strings.TrimSpace(installDevice)
-		if serial == "" {
-			if devs, err := android.Devices(); err == nil && len(devs) == 1 {
-				serial = devs[0]
-			}
+		serial, err := android.PickDevice(installDevice)
+		if err != nil {
+			return err
 		}
 		fmt.Printf("installing %s ...\n", apk)
 		return android.Install(apk, serial)

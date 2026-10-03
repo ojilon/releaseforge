@@ -17,6 +17,7 @@ var (
 	testStacktrace bool
 	testInfo       bool
 	testDebug      bool
+	testDevice     string
 )
 
 var testCmd = &cobra.Command{
@@ -66,9 +67,8 @@ Logs land under <data-root>/projects/<name>/logs.`,
 			}
 			targs = append(targs, extra...)
 			if k == "instrumented" {
-				// TODO(doc10): use PickDevice; for now fail fast without devices.
-				if devs, derr := android.Devices(); derr != nil || len(devs) == 0 {
-					return fmt.Errorf("test instrumented: no devices connected — connect one and check `adb devices`")
+				if _, derr := android.PickDevice(testDevice); derr != nil {
+					return fmt.Errorf("test instrumented: %w", derr)
 				}
 			}
 			logPath := rflog.LogPath(storage.LogsDir(root, info.Name), "test-"+k)
@@ -105,6 +105,7 @@ func init() {
 	testCmd.Flags().BoolVar(&testStacktrace, "stacktrace", false, "pass --stacktrace to Gradle (Android only)")
 	testCmd.Flags().BoolVar(&testInfo, "info", false, "pass --info to Gradle (Android only)")
 	testCmd.Flags().BoolVar(&testDebug, "debug", false, "pass --debug to Gradle (Android only)")
+	testCmd.Flags().StringVar(&testDevice, "device", "", "adb serial for instrumented tests (picker when 2+ devices)")
 }
 
 // expandKinds splits kind "all" into separate logged runs for Gradle; other
