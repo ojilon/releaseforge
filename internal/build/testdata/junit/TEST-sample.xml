@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.FooTest" tests="3" skipped="1" failures="1" errors="0">
+  <testcase classname="com.example.FooTest" name="passes" />
+  <testcase classname="com.example.FooTest" name="fails">
+    <failure message="expected true">AssertionError</failure>
+  </testcase>
+  <testcase classname="com.example.FooTest" name="skipped">
+    <skipped />
+  </testcase>
+</testsuite>

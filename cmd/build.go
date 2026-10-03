@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/ojilon/releaseforge/internal/build"
+	rflog "github.com/ojilon/releaseforge/internal/log"
 	"github.com/ojilon/releaseforge/internal/project"
 	"github.com/ojilon/releaseforge/internal/storage"
-	rflog "github.com/ojilon/releaseforge/internal/log"
 	"github.com/spf13/cobra"
 )
 
@@ -70,6 +70,7 @@ Logs are streamed live and persisted under the data-root.`,
 		fmt.Printf("log: %s\n", res.LogPath)
 		if !res.Success {
 			fmt.Printf("build %s FAILED (exit %d)\n", variant, res.ExitCode)
+			printReport(res.Report)
 			for _, e := range res.Errors {
 				fmt.Printf("  ! %s\n", e)
 			}
@@ -86,4 +87,14 @@ Logs are streamed live and persisted under the data-root.`,
 func init() {
 	buildCmd.Flags().StringVar(&buildVariant, "variant", "", "debug or release")
 	buildCmd.Flags().StringVar(&buildABIs, "abis", "", "comma-separated ABI filters (Android)")
+}
+
+// printReport renders structured error items after a failure.
+func printReport(rep *build.Report) {
+	if rep == nil {
+		return
+	}
+	for _, l := range rep.Format() {
+		fmt.Println(l)
+	}
 }

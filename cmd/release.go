@@ -14,9 +14,9 @@ import (
 	"github.com/ojilon/releaseforge/internal/config"
 	"github.com/ojilon/releaseforge/internal/git"
 	"github.com/ojilon/releaseforge/internal/github"
+	rflog "github.com/ojilon/releaseforge/internal/log"
 	"github.com/ojilon/releaseforge/internal/project"
 	"github.com/ojilon/releaseforge/internal/storage"
-	rflog "github.com/ojilon/releaseforge/internal/log"
 	"github.com/spf13/cobra"
 )
 
@@ -268,6 +268,7 @@ func runStep(dataRoot string, info project.Info, prefix, prog string, args ...st
 		OnLine:  func(t string, _ bool) { fmt.Println(t) },
 	})
 	if !res.Success {
+		printReport(res.Report)
 		for _, e := range res.Errors {
 			fmt.Printf("  ! %s\n", e)
 		}

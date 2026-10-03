@@ -13,10 +13,12 @@
 package storage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // EnvDataRoot is honoured by ResolveRoot when no explicit override is given.
@@ -100,6 +102,12 @@ func ReleaseVersionDir(root, project, version string) string {
 // ReportsDir returns <root>/projects/<name>/reports.
 func ReportsDir(root, project string) string {
 	return filepath.Join(ProjectDir(root, project), "reports")
+}
+
+// ReportPath builds a timestamped report filename under dir.
+func ReportPath(dir, prefix string) string {
+	stamp := time.Now().Format("20060102-150405")
+	return filepath.Join(dir, fmt.Sprintf("%s-%s.txt", prefix, stamp))
 }
 
 // CacheDir returns <root>/projects/<name>/cache.

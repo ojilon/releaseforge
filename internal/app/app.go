@@ -44,8 +44,9 @@ type logMsg struct {
 
 // doneMsg marks completion of an async command.
 type doneMsg struct {
-	label string
-	err   error
+	label  string
+	err    error
+	report []string
 }
 
 // Model is the TUI root.
@@ -163,6 +164,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.running = false
 		m.handle = nil
 		m.status = msg.label
+		for _, l := range msg.report {
+			m.appendLine(l)
+		}
 		if msg.err != nil {
 			m.appendLine(tui.ErrorStyle.Render("✗ " + msg.label + ": " + msg.err.Error()))
 		} else {
@@ -326,7 +330,11 @@ func (m *Model) waitLine() tea.Cmd {
 			if res.Success {
 				return doneMsg{label: okL}
 			}
-			return doneMsg{label: failL, err: firstError(res)}
+			var rep []string
+			if res.Report != nil {
+				rep = res.Report.Format()
+			}
+			return doneMsg{label: failL, err: firstError(res), report: rep}
 		}
 		return logMsg{text: ln.Text, isErr: ln.IsErr}
 	}

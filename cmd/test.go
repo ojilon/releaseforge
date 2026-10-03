@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/ojilon/releaseforge/internal/build"
+	rflog "github.com/ojilon/releaseforge/internal/log"
 	"github.com/ojilon/releaseforge/internal/project"
 	"github.com/ojilon/releaseforge/internal/storage"
-	rflog "github.com/ojilon/releaseforge/internal/log"
 	"github.com/spf13/cobra"
 )
 
@@ -61,10 +62,18 @@ Logs land under <data-root>/projects/<name>/logs.`,
 		fmt.Printf("log: %s\n", res.LogPath)
 		if !res.Success {
 			fmt.Printf("test %s FAILED (exit %d)\n", kind, res.ExitCode)
+			printReport(res.Report)
 			for _, e := range res.Errors {
 				fmt.Printf("  ! %s\n", e)
 			}
 			return fmt.Errorf("test %s failed", kind)
+		}
+		if summary, path, err := build.SummarizeTests(
+			filepath.Join(info.Root, "app", "build", "test-results"),
+			storage.ReportsDir(root, info.Name)); err != nil {
+			return fmt.Errorf("junit summary: %w", err)
+		} else if summary != "" {
+			fmt.Printf("tests: %s\nreport: %s\n", summary, path)
 		}
 		fmt.Printf("test %s passed\n", kind)
 		return nil

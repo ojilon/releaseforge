@@ -24,6 +24,8 @@ type Result struct {
 	LogPath  string
 	Errors   []string
 	Command  string
+	// Report holds structured errors when extraction found any.
+	Report *Report
 }
 
 // Options controls a Run/Start invocation.
@@ -204,7 +206,12 @@ func execute(ctx context.Context, name string, args []string, opts Options, emit
 		}
 	}
 	errs := ExtractErrors(lines, 15)
-	return Result{Success: code == 0, ExitCode: code, LogPath: opts.LogPath, Command: display, Errors: errs}
+	res := Result{Success: code == 0, ExitCode: code, LogPath: opts.LogPath, Command: display, Errors: errs}
+	if rep := ParseErrors(lines); len(rep.Items) > 0 {
+		rep.LogPath = opts.LogPath
+		res.Report = &rep
+	}
+	return res
 }
 
 // GradleWrapper returns the gradle wrapper script for dir.
