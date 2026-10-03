@@ -3,9 +3,11 @@ package cmd
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ojilon/releaseforge/internal/build"
 	rflog "github.com/ojilon/releaseforge/internal/log"
+	"github.com/ojilon/releaseforge/internal/metrics"
 	"github.com/ojilon/releaseforge/internal/project"
 	"github.com/ojilon/releaseforge/internal/storage"
 	"github.com/spf13/cobra"
@@ -70,12 +72,16 @@ Logs are streamed live and persisted under the data-root.`,
 			fmt.Printf("note: --abis %s honoured via gradle.properties aurora.abiFilters (edit file before build)\n", buildABIs)
 		}
 		logPath := rflog.LogPath(storage.LogsDir(root, info.Name), "build-"+variant)
+		started := time.Now()
 		res := build.Run(r.Program(), bargs, build.Options{
 			Dir:     info.Root,
 			LogPath: logPath,
 			Project: info.Name,
 			OnLine:  func(t string, _ bool) { fmt.Println(t) },
 		})
+		metrics.Append(root, metrics.Record{Project: info.Name, Kind: "build",
+			Variant: variant, Success: res.Success,
+			DurationMs: time.Since(started).Milliseconds()})
 		fmt.Printf("log: %s\n", res.LogPath)
 		if !res.Success {
 			fmt.Printf("build %s FAILED (exit %d)\n", variant, res.ExitCode)

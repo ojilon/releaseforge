@@ -1,5 +1,13 @@
 # Bootstrap v0.0.1 — self-hosting lifecycle
 
+> v0.0.2 delta (this doc stays the v0.0.1 record): `status` now also shows
+> upstream + last build and `[cache]` version provenance; `notes` are grouped
+> and capped; zips include `notes.md`; `release` gained `--dry-run` and an
+> existing-tag guard; `logs` reads (`show|last|tail`); `build`/`test` take
+> Gradle verbosity flags and `--abis`; `test all` writes two logs; new
+> commands `doctor`, `run`, `logcat`. See `RELEASE.md` (general guide) and
+> `docs/v0.0.2/` for the current state.
+
 Goal of v0.0.1: **ReleaseForge manages itself end-to-end.** One project
 (this repo), one version source, real storage on your machine. Multi-project
 features and Android pipelines reuse the same flow later; they are not the

@@ -3,10 +3,12 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/ojilon/releaseforge/internal/android"
 	"github.com/ojilon/releaseforge/internal/build"
 	rflog "github.com/ojilon/releaseforge/internal/log"
+	"github.com/ojilon/releaseforge/internal/metrics"
 	"github.com/ojilon/releaseforge/internal/project"
 	"github.com/ojilon/releaseforge/internal/storage"
 	"github.com/spf13/cobra"
@@ -72,12 +74,16 @@ Logs land under <data-root>/projects/<name>/logs.`,
 				}
 			}
 			logPath := rflog.LogPath(storage.LogsDir(root, info.Name), "test-"+k)
+			started := time.Now()
 			res := build.Run(r.Program(), targs, build.Options{
 				Dir:     info.Root,
 				LogPath: logPath,
 				Project: info.Name,
 				OnLine:  func(t string, _ bool) { fmt.Println(t) },
 			})
+			metrics.Append(root, metrics.Record{Project: info.Name, Kind: "test",
+				Variant: k, Success: res.Success,
+				DurationMs: time.Since(started).Milliseconds()})
 			fmt.Printf("log: %s\n", res.LogPath)
 			if !res.Success {
 				fmt.Printf("test %s FAILED (exit %d)\n", k, res.ExitCode)

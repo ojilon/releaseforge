@@ -14,7 +14,7 @@
 - [x] 12 git-integration
 - [x] 13 tui-architecture
 - [x] 14 tui-layout-and-panels
-- [ ] 15 metrics-and-polish
+- [x] 15 metrics-and-polish
 
 Order per `docs/v0.0.2/00-overview-and-order.md`. Tick only when
 `go vet ./...` + `go test ./...` pass and the `v0.0.2: <nn> <title>`

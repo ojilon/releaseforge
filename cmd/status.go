@@ -5,6 +5,7 @@ import (
 
 	"github.com/ojilon/releaseforge/internal/android"
 	"github.com/ojilon/releaseforge/internal/git"
+	"github.com/ojilon/releaseforge/internal/metrics"
 	"github.com/ojilon/releaseforge/internal/project"
 	"github.com/spf13/cobra"
 )
@@ -53,6 +54,7 @@ var statusCmd = &cobra.Command{
 		} else {
 			fmt.Printf("devices:   none (adb empty or missing)\n")
 		}
+		fmt.Println(metrics.LastBuildLine(root, info.Name))
 		return nil
 	},
 }

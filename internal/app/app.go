@@ -17,6 +17,7 @@ import (
 	"github.com/ojilon/releaseforge/internal/git"
 	"github.com/ojilon/releaseforge/internal/history"
 	rflog "github.com/ojilon/releaseforge/internal/log"
+	"github.com/ojilon/releaseforge/internal/metrics"
 	"github.com/ojilon/releaseforge/internal/project"
 	"github.com/ojilon/releaseforge/internal/storage"
 	"github.com/ojilon/releaseforge/internal/tui"
@@ -78,6 +79,11 @@ type Model struct {
 	handle     *build.Handle
 	pendingOK  string
 	pendingErr string
+	pendingRun struct {
+		kind    string // "build" | "test"
+		variant string
+		started time.Time
+	}
 
 	// pending async run
 	running bool
@@ -200,6 +206,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.phase = "failed"
 		} else {
 			m.phase = "ok"
+		}
+		if m.pendingRun.kind != "" && !m.pendingRun.started.IsZero() {
+			metrics.Append(m.dataRoot, metrics.Record{Project: m.projectName(),
+				Kind: m.pendingRun.kind, Variant: m.pendingRun.variant,
+				Success:    msg.err == nil,
+				DurationMs: time.Since(m.pendingRun.started).Milliseconds()})
+			m.pendingRun.kind = ""
 		}
 		m.status = msg.label
 		for _, l := range msg.report {
@@ -503,8 +516,9 @@ func (m *Model) statusText() string {
 			ver = name
 		}
 	}
-	return fmt.Sprintf("releaseforge: %s\nproject: %s\nroot: %s\ntype: %s\nversion: %s\ndata-root: %s",
-		version.ToolVersion, info.Name, info.Root, info.Type, ver, m.dataRoot)
+	return fmt.Sprintf("releaseforge: %s\nproject: %s\nroot: %s\ntype: %s\nversion: %s\ndata-root: %s\n%s",
+		version.ToolVersion, info.Name, info.Root, info.Type, ver, m.dataRoot,
+		metrics.LastBuildLine(m.dataRoot, info.Name))
 }
 
 func (m *Model) doScan(path string) string {
@@ -656,6 +670,7 @@ func (m *Model) doBuild(variant string) (string, tea.Cmd) {
 	m.running = true
 	m.status = "building " + variant
 	m.phase = "building"
+	m.pendingRun.kind, m.pendingRun.variant, m.pendingRun.started = "build", variant, time.Now()
 	m.pendingOK, m.pendingErr = "build "+variant+" ok — log "+logPath, "build "+variant
 	m.refreshProject()
 	extra := ""
@@ -692,6 +707,7 @@ func (m *Model) doTest(kind string) (string, tea.Cmd) {
 	m.running = true
 	m.status = "testing " + kind
 	m.phase = "testing"
+	m.pendingRun.kind, m.pendingRun.variant, m.pendingRun.started = "test", kind, time.Now()
 	m.pendingOK, m.pendingErr = "test "+kind+" ok — log "+logPath, "test "+kind
 	return fmt.Sprintf("started test %s (log %s, esc cancels)", kind, logPath), m.waitLine()
 }

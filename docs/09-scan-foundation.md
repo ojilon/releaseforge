@@ -1,31 +1,40 @@
-# Scan foundation (v0.0.1 core)
+# Scan foundation (v0.0.1 core, current through v0.0.2)
+
+> v0.0.2 status: implemented as specified here, plus `cache/meta.json`
+> freshness (`internal/project/scan.go: Meta/LoadMeta/Fresh`), config merge
+> with key ownership (tool-owned refreshed, user-owned preserved), repo-local
+> `.releaseforge.json` seed, Gradle deep parse (`gradle` object in scan.json),
+> bounded CMake inventory (`cmake_files`), and cache-first display
+> (`CachedVersion` in `status` and the TUI header). Folder dialog was
+> deliberately never built — typed paths only (see below).
 
 Scanning is the **basis** of ReleaseForge. Until a project is scanned, the tool cannot responsibly choose build tasks, version files, or release behaviour. Implement this thoroughly before packaging/signing work.
 
 ## User-facing flow
 
 1. Ensure data root exists (`init` if needed).
-2. **Open folder**
-   - TUI command `open` / button: native Windows folder dialog when possible; else path prompt (Huh or command bar).
-   - CLI: `releaseforge scan [path]` (default `.` or interactive).
+2. **Open folder** — type the path (CLI arg or TUI command bar). No native
+   folder dialog exists; that was a deliberate deferral, still in force.
+   - TUI: `open <path>` / `scan <path>` (aliases `scan`, `rescan`).
+   - CLI: `releaseforge scan [path]` (default: current project).
 3. Run scan pipeline on the absolute path.
 4. Persist:
-   - `projects/<name>/cache/scan.json`
-   - update `config.json` (minimal or full)
+   - `projects/<name>/cache/scan.json` + `projects/<name>/cache/meta.json`
+   - merge (not just write) `config.json`: tool-owned keys refreshed,
+     user-owned keys (`signing`, `github`, `artifacts.app_name`, custom
+     tasks) preserved; `.releaseforge.json` seed applied (secrets refused)
    - push entry to `history/recent-projects.json`
-5. Show results in TUI panes (Overview, Git, Tools) or CLI summary.
+5. Show results in the CLI summary or the TUI viewport (`scan` output includes
+   a `Config: …​ (written|updated|unchanged)` marker).
 
 ## Native folder picker (Windows)
 
-Goal: same comfort as OpenCode-style “open folder”.
+Decision (unchanged since v0.0.1): typed paths only. A native dialog was
+evaluated and deferred — `scan <path>` / `open <path>` plus the `recent`
+list cover the flow with zero new dependencies. Revisit only with a concrete
+usability complaint, not speculatively.
 
-Options for implementers (pick one, document choice in code):
-
-- PowerShell `FolderBrowserDialog` / `System.Windows.Forms` invoked from Go.
-- A small helper or existing Go binding for Win32 `IFileDialog`.
-- Fallback: user pastes path in the command bar (`open D:\Dev\MyRepo`).
-
-Non-Windows: path entry + optional `zenity`/`kdialog` later; not required for v0.0.1 if the primary machine is Windows.
+Non-Windows: path entry only; no `zenity`/`kdialog` plans.
 
 ## Scan pipeline (ordered steps)
 
@@ -70,18 +79,30 @@ Primary `type` from `docs/02-project-types.md` order. Additional signals go into
 ### 4. Config & dependency hints
 
 - Parse lightly where cheap:
-  - `gradle.properties` key/value for `app.versionName`, `app.versionCode`, `ndkVersion`, `aurora.abiFilters`
+  - `gradle.properties` full key map with line numbers (`app.versionName`,
+    `app.versionCode`, `ndkVersion`, `*abiFilters`, …)
   - `wails.json` productVersion
   - `go.mod` module path
-- List top-level scripts: `scripts/*.py`, `Makefile`, etc.
-- For Android, note presence of `scripts/release.py` (legacy pipeline to absorb later).
+  - Android deep parse (v0.0.2): settings modules, `android{}` fields with
+    `{value,file,line}` provenance, wrapper `distributionUrl`, redacted
+    `sdk.dir` presence, `libs.versions.toml` versions, manifest
+    package + launcher presence, bounded `cmake_files` list
+- List top-level scripts: `scripts/*.py`, etc.
+- Unresolved `property()`/`extra[]` references are recorded as `unresolved`,
+  never guessed.
 
 ### 5. Write cache + config
 
 - `EnsureProjectLayout`
-- Write `cache/scan.json` (full snapshot)
-- Write or merge `config.json` with at least: `type`, `name`, `root`, detected version file if known
+- Write `cache/scan.json` (full snapshot) + `cache/meta.json`
+  (`scanned_at`, `tool_version`, `root`, `root_mtime`)
+- Merge `config.json` per the ownership rule above (print
+  `written|updated|unchanged`)
 - Update recent projects list
+
+Cache is trusted until the next explicit `scan`/`rescan` (freshness = root
+match in `meta.json`); safety-critical paths (build/release/install) still
+re-detect live, display paths (`status`, TUI header) prefer the cache.
 
 ## `cache/scan.json` schema (v1)
 
@@ -127,6 +148,11 @@ Primary `type` from `docs/02-project-types.md` order. Additional signals go into
 
 Unknown fields should be ignored by older readers; bump `scanned_at` on every refresh.
 
+Since v0.0.2 the snapshot also carries `gradle` (deep parse, android-gradle
+only) and `cmake_files` (bounded inventory), and `cache/meta.json` sits
+beside it. See `internal/project/gradle.go` and `Snapshot` in
+`internal/project/scan.go` for the authoritative shapes.
+
 ## CLI output (v0.0.1)
 
 ```text
@@ -136,15 +162,17 @@ Type:    android-gradle
 Git:     main @ abc1234 (30 commits loaded)
 Tools:   gradle, cmake, ndk
 Version: 0.0.3_2 (code 4) from gradle.properties
+Config:  D:\ReleaseForgeData\projects\SomeProject\config.json (updated)
 Cache:   D:\ReleaseForgeData\projects\SomeProject\cache\scan.json
 ```
 
-## TUI presentation (v0.0.1)
+## TUI presentation
 
-- **Overview** — type, path, version, last scan time
-- **Git** — recent commits / tags from cache
-- **Tools** — tools + frameworks + config files list
-- Command bar accepts: `open`, `scan`, `rescan`, `recent`, `status`, `-h` / `help`, `quit`
+Single viewport, no panes or tabs. The same data surfaces through the
+command bar: `open|scan [path]`, `rescan`, `recent`, `status` (includes
+`[cache]` provenance on the version line), `version`, `help`, plus
+`build`/`test`/`notes`/`logs`/`clear`/`quit`. Panes/tabs remain explicitly
+out of scope (see `docs/04-tui-design.md`).
 
 ## Help in the command bar
 
@@ -156,24 +184,26 @@ When the user submits `-h`, `help`, or `?`:
 
 ## Implementation packages (suggested)
 
-| Package | Responsibility |
-|---------|----------------|
-| `internal/storage` | paths, layout (exists) |
-| `internal/config` | global/project JSON (exists) |
-| `internal/project` | Detect + Scan orchestration |
-| `internal/git` | local log/branch/tags (expand beyond notes stub) |
-| `internal/history` | recent-projects + command history |
-| `internal/app` / `internal/tui` | open dialog, panes, help view |
-| `cmd/scan.go` | wire CLI |
+| Package | Responsibility | State |
+|---------|----------------|-------|
+| `internal/storage` | paths, layout | done |
+| `internal/config` | global/project JSON | done |
+| `internal/project` | Detect + Scan orchestration + gradle deep parse | done |
+| `internal/git` | branch, log, tags, origin, changelog grouping | done |
+| `internal/history` | recent-projects + persisted command history | done |
+| `internal/app` / `internal/tui` | command bar, viewport, help view, panels | done (no panes/tabs) |
+| `cmd/scan.go` | wire CLI (`--deep` opt-in runs `gradlew :app:properties`) | done |
 
-## Acceptance criteria (v0.0.1)
+## Acceptance criteria
 
-- [ ] `init` creates data root on chosen drive
-- [ ] User can select a folder (dialog or path) and run scan
-- [ ] Git repos show branch + recent commits in CLI and TUI
-- [ ] Non-git folders still show tool detection
-- [ ] Gradle/CMake/Wails/Go markers detected when present
-- [ ] Results written under data-root project cache
-- [ ] Recent projects list updates and is reopenable
-- [ ] `-h` / `help` in TUI shows command help in the display pane
-- [ ] Binary is installable/usable on the author’s Windows machine without implementing full release yet
+All met as of v0.0.2 (checked against the implementation):
+
+- [x] `init` creates data root on chosen drive
+- [x] User types a folder path and runs scan (dialog explicitly deferred)
+- [x] Git repos show branch + recent commits in CLI and TUI
+- [x] Non-git folders still show tool detection
+- [x] Gradle/CMake/Wails/Go markers detected when present
+- [x] Results written under data-root project cache (+ `meta.json`)
+- [x] Recent projects list updates; reopen via `scan <path from recent>`
+- [x] `-h` / `help` in TUI shows command help in the display pane
+- [x] Binary is installable/usable on Windows (`installer.exe` + `init`/seed)

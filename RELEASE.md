@@ -36,14 +36,16 @@ this shape once their runners land; until then they are scan + notes only.
 
 ```powershell
 releaseforge scan D:\path\to\proj     # detect + cache + recent (run when things change)
-releaseforge status                   # tool + project + type + version + git + devices + paths
-releaseforge version                  # tool version + project version
+releaseforge status                   # tool + project + type + version ([cache]) + git + upstream + devices + last build + paths
+releaseforge version                  # tool version + project version (gradle.properties | kts literal | VERSION)
 releaseforge recent                   # projects you have opened before
-releaseforge logs                     # persisted build/test logs, newest first
+releaseforge logs                     # list; logs last | logs show <prefix> | logs tail [-n N]
+releaseforge doctor                   # android toolchain + device health (android work)
 ```
 
-`status` is the one-line health check. `scan` output ends with `Config:` and
-`Cache:` paths — that is where the tool keeps what it knows.
+`status` is the one-line health check. `scan` output ends with `Config: …
+(written|updated|unchanged)` and `Cache:` paths — that is where the tool
+keeps what it knows.
 
 ### 1b. By hand
 
@@ -66,13 +68,16 @@ Version lives in exactly one place per type: `VERSION` file (go),
 
 ```powershell
 releaseforge test                       # go: go test ./... | android: unit tests
-releaseforge test all                   # android only: unit + instrumented
+releaseforge test all                   # android only: unit + instrumented, two separate logs
+releaseforge test instrumented --device ABC123   # pick device (picker when 2+)
 releaseforge logs                       # open the persisted log on failure
 ```
 
 Live output streams; the full log lands under
-`projects/<name>/logs/test-*.log`. The `!` lines at the end are the headline
-errors.
+`projects/<name>/logs/test-*.log` (one per kind for `all`). The `!` lines
+at the end are the headline errors; structured `file:line` + `hint:` lines
+come first when the parser recognizes the failure. Instrumented tests need
+a connected device — without one they fail in under 2s naming the fix.
 
 ### 2b. By hand
 
@@ -95,6 +100,7 @@ tool's `test` fails identically — fix it here first, it is faster.
 ```powershell
 releaseforge build                    # debug: go build (+ version stamp) | gradle assembleDebug
 releaseforge build release            # release: -trimpath, stripped | gradle assembleRelease
+releaseforge build --abis arm64-v8a   # android only: appended as -Paurora.abiFilters (files untouched)
 ```
 
 Go binaries land in `projects/<name>/builds/` already stamped with the
@@ -130,10 +136,11 @@ like (conventionally `dist/` or `release/<version>/` in the repo, gitignored).
 ### 4a. With ReleaseForge
 
 ```powershell
-releaseforge notes 0.0.2        # notes.md from commits since last tag → releases/0.0.2/
+releaseforge notes 0.0.2        # grouped notes.md (Features/Fixes/…, max 100 commits) → releases/0.0.2/
 releaseforge build release      # binary/APK first (previous section)
 ```
 
+The release zip always includes `notes.md` alongside the artifacts.
 Packaging itself (copy + rename + zip) currently happens inside `release`
 (section 6a). Standalone `package` is not a command yet — until then, zip by
 hand from the release folder:
@@ -159,7 +166,9 @@ Compress-Archive release\0.0.2\myapp-0.0.2.exe myapp-0.0.2.zip
 ### 5a. With ReleaseForge
 
 ```powershell
-releaseforge version --set 0.0.2      # go: rewrites VERSION | android: name + code+1
+releaseforge version --set 0.0.2      # go: rewrites VERSION | android properties: name + code+1 | kts: literal
+releaseforge version bump 0.0.2       # alias of --set, clearer intent for releases
+releaseforge version --code-only      # gradle.properties only: code+1, name untouched
 git diff                              # review — the tool never commits
 ```
 
@@ -188,16 +197,17 @@ releaseforge release 0.0.2 --pre
 It runs: version write → test → build(s) → package → notes → zip →
 `tag v0.0.2` → `git push origin v0.0.2` → `gh release create` (+ `--prerelease`
 from `--pre`). Android adds the sign step (keystore password prompted once,
-never stored). Then attach anything the pipeline does not know about yet
-(e.g. the installer — automated from v0.0.2):
+never stored). Rehearse free with `releaseforge release 0.0.2 --dry-run`
+(plan only, zero side effects). Then attach anything the pipeline does not
+know about yet (e.g. the installer — still manual):
 
 ```powershell
 gh release upload v0.0.2 dist/installer.exe
 ```
 
 Without `gh` on PATH it stops after the local tag + zip (exit 0) and prints
-the exact publish command for later. A rerun with an existing tag fails on
-the tag step — that is the guard working, not a bug.
+the exact publish command for later. A rerun with an existing tag fails fast
+before writing anything — that is the guard working, not a bug.
 
 ### 6b. By hand — tags and GitHub release
 
@@ -224,7 +234,9 @@ still the releasable state — publish from any machine with `gh` later.
 - **Your own Go project:** copy the stamped binary where it belongs; no
   registry, no services in v0.0.1 scope.
 - **Android:** `adb install -r <apk>` (device connected); the tool's
-  `install [debug|release]` wraps exactly this.
+  `install [debug|release]` wraps exactly this (device picker when 2+).
+  `run` = build + install + launch in one step; `logcat [-n 200] [--pid
+  <package>]` tails device logs; `doctor` checks the whole toolchain.
 
 ---
 
@@ -263,7 +275,7 @@ with notes + assets.
 |---|---|
 | `data root not initialised` | Storage unknown here → `init`, or set `$env:RELEASEFORGE_DATA_ROOT`, or pass `--data-root`. Bare `releaseforge`/`go run .` opens the TUI, which needs storage too. |
 | `unknown command: release` inside the TUI bar | TUI has no `release` verb — run it at the PowerShell prompt. |
-| Second `release` fails on tag | Guard working. Already released → verify with `gh release view`. Need a redo → delete remote+local tag first, deliberately. |
+| Second `release` fails on tag | Guard working — it fails before writing anything. Already released → verify with `gh release view`. Need a redo → delete remote+local tag first, deliberately. Rehearse with `--dry-run`. |
 | Release dies in `test` | Read the newest log first: `logs last` (or `logs tail -n 50 last`). Full list: `logs`. Exact file: `logs show <prefix>`. Fix with plain `go test` / gradle first. |
 | `build`/`test` need Gradle-only flags | `--stacktrace`, `--info`, `--debug` are rejected for Go projects. They land verbatim in the log's `$` header line — check there first. |
 | `gh release ...` fails but tag pushed | Publish manually per section 6b — tag + local zip is the safe state. |
