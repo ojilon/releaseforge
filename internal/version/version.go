@@ -7,4 +7,4 @@
 package version
 
 // ToolVersion is the current tool release. Bump with VERSION + git tag.
-var ToolVersion = "0.0.1"
+var ToolVersion = "0.0.2"
