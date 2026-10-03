@@ -115,11 +115,11 @@ func releaseAndroid(info project.Info, r project.Runner, version string) error {
 	if err != nil {
 		return err
 	}
-	debugArgs, err := r.BuildArgs("debug", "")
+	debugArgs, err := r.BuildArgs("debug", "", "")
 	if err != nil {
 		return err
 	}
-	releaseArgs, err := r.BuildArgs("release", "")
+	releaseArgs, err := r.BuildArgs("release", "", "")
 	if err != nil {
 		return err
 	}
@@ -136,7 +136,25 @@ func releaseAndroid(info project.Info, r project.Runner, version string) error {
 	}
 
 	fmt.Printf("==> package %s\n", verDir)
-	debugApk, releaseApk, err := android.PackageRelease(info.Root, version, appName, verDir)
+	debugCands := []string{android.DebugApkPath}
+	releaseCands := []string{android.ReleaseApkPath}
+	if pcfg.Artifacts != nil {
+		if pcfg.Artifacts.DebugApk != "" {
+			debugCands = append([]string{pcfg.Artifacts.DebugApk}, debugCands...)
+		}
+		if pcfg.Artifacts.ReleaseUnsigned != "" {
+			releaseCands = append([]string{pcfg.Artifacts.ReleaseUnsigned}, releaseCands...)
+		}
+	}
+	debugSrc, err := android.ResolveApk(info.Root, debugCands...)
+	if err != nil {
+		return fmt.Errorf("debug APK not found (run build debug): %w", err)
+	}
+	releaseSrc, err := android.ResolveApk(info.Root, releaseCands...)
+	if err != nil {
+		return fmt.Errorf("release APK not found (run build release): %w", err)
+	}
+	debugApk, releaseApk, err := android.PackageFiles(version, appName, verDir, debugSrc, releaseSrc)
 	if err != nil {
 		return err
 	}
@@ -224,7 +242,7 @@ func releaseGo(info project.Info, r project.Runner, version string) error {
 
 	out := filepath.Join(verDir, build.GoBinaryName(r.BinaryBaseName()+"-"+version))
 	fmt.Printf("==> build release → %s\n", out)
-	buildArgs, err := r.BuildArgs("release", out)
+	buildArgs, err := r.BuildArgs("release", out, "")
 	if err != nil {
 		return err
 	}

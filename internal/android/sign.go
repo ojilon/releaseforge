@@ -91,23 +91,40 @@ func SignApk(apkPath, keystorePath, alias, password, apksignerBin string) error 
 	return nil
 }
 
-// PackageRelease copies debug + unsigned release APKs into versionDir with
-// <AppName>-<version>-debug.apk / -release.apk names (mirrors scripts/package.py
-// but with configurable app name and data-root-friendly output dir).
-func PackageRelease(projectRoot, version, appName, versionDir string) (debugOut, releaseOut string, err error) {
+// Well-known Gradle APK outputs, used as fallback when scan/config supply
+// nothing better.
+const (
+	DebugApkPath   = "app/build/outputs/apk/debug/app-debug.apk"
+	ReleaseApkPath = "app/build/outputs/apk/release/app-release-unsigned.apk"
+)
+
+// ResolveApk returns the first existing path among candidates, resolving
+// relative entries against projectRoot (typically scan/config values first,
+// the well-known outputs last).
+func ResolveApk(projectRoot string, candidates ...string) (string, error) {
+	for _, c := range candidates {
+		if strings.TrimSpace(c) == "" {
+			continue
+		}
+		p := c
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(projectRoot, c)
+		}
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("no APK found among %d candidate(s) under %s", len(candidates), projectRoot)
+}
+
+// PackageFiles copies resolved APKs into versionDir with
+// <AppName>-<version>-debug.apk / -release.apk names.
+func PackageFiles(version, appName, versionDir, debugSrc, releaseSrc string) (debugOut, releaseOut string, err error) {
 	if strings.TrimSpace(version) == "" {
 		return "", "", fmt.Errorf("package: version required")
 	}
 	if strings.TrimSpace(appName) == "" {
 		appName = "app"
-	}
-	debugSrc := filepath.Join(projectRoot, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
-	releaseSrc := filepath.Join(projectRoot, "app", "build", "outputs", "apk", "release", "app-release-unsigned.apk")
-	if _, err := os.Stat(debugSrc); err != nil {
-		return "", "", fmt.Errorf("debug APK not found: %s (run build debug)", debugSrc)
-	}
-	if _, err := os.Stat(releaseSrc); err != nil {
-		return "", "", fmt.Errorf("release APK not found: %s (run build release)", releaseSrc)
 	}
 	if err := os.MkdirAll(versionDir, 0o755); err != nil {
 		return "", "", err
@@ -121,6 +138,21 @@ func PackageRelease(projectRoot, version, appName, versionDir string) (debugOut,
 		return "", "", err
 	}
 	return debugOut, releaseOut, nil
+}
+
+// PackageRelease resolves the well-known Gradle outputs and packages them.
+// Callers with scan/config-known locations should ResolveApk first (config
+// values take precedence) and call PackageFiles directly.
+func PackageRelease(projectRoot, version, appName, versionDir string) (string, string, error) {
+	debugSrc, err := ResolveApk(projectRoot, DebugApkPath)
+	if err != nil {
+		return "", "", fmt.Errorf("debug APK not found (run build debug): %w", err)
+	}
+	releaseSrc, err := ResolveApk(projectRoot, ReleaseApkPath)
+	if err != nil {
+		return "", "", fmt.Errorf("release APK not found (run build release): %w", err)
+	}
+	return PackageFiles(version, appName, versionDir, debugSrc, releaseSrc)
 }
 
 func copyFile(src, dst string) error {

@@ -47,3 +47,17 @@ func TestGradleVerbosity(t *testing.T) {
 		t.Fatal("expected go rejection")
 	}
 }
+
+func TestExpandKinds(t *testing.T) {
+	gr, _ := project.For(project.Info{Type: "android-gradle"})
+	if got := expandKinds(gr, "all"); len(got) != 2 || got[0] != "unit" || got[1] != "instrumented" {
+		t.Fatalf("got %v", got)
+	}
+	if got := expandKinds(gr, "unit"); len(got) != 1 {
+		t.Fatalf("got %v", got)
+	}
+	gor, _ := project.For(project.Info{Type: "go"})
+	if got := expandKinds(gor, "all"); len(got) != 1 || got[0] != "all" {
+		t.Fatalf("go keeps kind: %v", got)
+	}
+}

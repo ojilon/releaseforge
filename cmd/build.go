@@ -57,7 +57,7 @@ Logs are streamed live and persisted under the data-root.`,
 			return err
 		}
 		out := r.BuildOutput(root, variant)
-		bargs, err := r.BuildArgs(variant, out)
+		bargs, err := r.BuildArgs(variant, out, buildABIs)
 		if err != nil {
 			return err
 		}

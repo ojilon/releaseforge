@@ -8,7 +8,7 @@
 - [x] 03 async-process-and-logstream
 - [x] 04 error-parsing
 - [x] 05 log-commands
-- [ ] 09 android-build-test
+- [x] 09 android-build-test
 - [ ] 10 adb-install-run
 - [ ] 11 sign-and-release-android
 - [ ] 12 git-integration

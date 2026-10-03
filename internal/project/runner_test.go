@@ -35,12 +35,17 @@ func TestGradleMatrix(t *testing.T) {
 			t.Fatalf("%s: missing :app: prefix: %v", k, args)
 		}
 	}
-	if _, err := r.BuildArgs("bogus", ""); err == nil {
+	if _, err := r.BuildArgs("bogus", "", ""); err == nil {
 		t.Fatal("expected variant error")
 	}
-	if args, _ := r.BuildArgs("debug", ""); args[0] != "assembleDebug" {
+	if args, _ := r.BuildArgs("debug", "", ""); args[0] != "assembleDebug" {
 		t.Fatalf("got %v", args)
 	}
+	args, _ := r.BuildArgs("release", "", "arm64-v8a")
+	if len(args) != 2 || args[1] != "-Paurora.abiFilters=arm64-v8a" {
+		t.Fatalf("abis passthrough missing: %v", args)
+	}
+	// BuildArgs is pure: it never touches gradle.properties (no file I/O here).
 	if r.BuildOutput("d", "debug") != "" {
 		t.Fatal("gradle has no data-root output")
 	}

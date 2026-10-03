@@ -524,7 +524,7 @@ func (m *Model) doBuild(variant string) (string, tea.Cmd) {
 	}
 	_ = storage.EnsureProjectLayout(m.dataRoot, info.Name)
 	out := r.BuildOutput(m.dataRoot, variant)
-	bargs, err := r.BuildArgs(variant, out)
+	bargs, err := r.BuildArgs(variant, out, "")
 	if err != nil {
 		return tui.ErrorStyle.Render("build: " + err.Error()), nil
 	}

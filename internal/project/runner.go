@@ -26,8 +26,9 @@ type Runner interface {
 	// TestArgs validates kind and returns argv.
 	TestArgs(kind string) ([]string, error)
 	// BuildArgs validates variant and returns argv (out is the go output
-	// path; gradle ignores it).
-	BuildArgs(variant, out string) ([]string, error)
+	// path; gradle ignores it). abis is gradle-only: when non-empty it
+	// appends -Paurora.abiFilters=<abis> without touching any files.
+	BuildArgs(variant, out, abis string) ([]string, error)
 	// BuildOutput is the data-root output path a build produces (go), or ""
 	// when outputs stay in the project tree (gradle).
 	BuildOutput(dataRoot, variant string) string
@@ -81,15 +82,21 @@ func (r GradleRunner) TestArgs(kind string) ([]string, error) {
 	return nil, fmt.Errorf("test: unknown kind %q (want unit|instrumented|all)", kind)
 }
 
-func (r GradleRunner) BuildArgs(variant, _ string) ([]string, error) {
+func (r GradleRunner) BuildArgs(variant, _, abis string) ([]string, error) {
+	var task string
 	switch strings.ToLower(strings.TrimSpace(variant)) {
 	case "debug":
-		return []string{"assembleDebug"}, nil
+		task = "assembleDebug"
 	case "release":
-		return []string{"assembleRelease"}, nil
+		task = "assembleRelease"
 	default:
 		return nil, fmt.Errorf("build: unknown variant %q (want debug|release)", variant)
 	}
+	args := []string{task}
+	if abis = strings.TrimSpace(abis); abis != "" {
+		args = append(args, "-Paurora.abiFilters="+abis)
+	}
+	return args, nil
 }
 
 func (r GradleRunner) BuildOutput(_, _ string) string { return "" }
@@ -140,7 +147,7 @@ func (r GoRunner) TestSpecs() []TestSpec {
 
 func (r GoRunner) TestArgs(_ string) ([]string, error) { return build.GoTestArgs(), nil }
 
-func (r GoRunner) BuildArgs(variant, out string) ([]string, error) {
+func (r GoRunner) BuildArgs(variant, out, _ string) ([]string, error) {
 	v := strings.ToLower(strings.TrimSpace(variant))
 	if v != "debug" && v != "release" {
 		return nil, fmt.Errorf("build: unknown variant %q (want debug|release)", variant)

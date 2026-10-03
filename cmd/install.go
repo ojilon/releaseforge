@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ojilon/releaseforge/internal/android"
+	"github.com/ojilon/releaseforge/internal/config"
 	"github.com/ojilon/releaseforge/internal/project"
 	"github.com/ojilon/releaseforge/internal/storage"
 	"github.com/spf13/cobra"
@@ -52,11 +53,23 @@ var installCmd = &cobra.Command{
 			}
 		}
 		if apk == "" {
+			cands := []string{}
+			if cfg, err := configForInstall(root, info.Name); err == nil && cfg != nil && cfg.Artifacts != nil {
+				if variant == "debug" && cfg.Artifacts.DebugApk != "" {
+					cands = append(cands, cfg.Artifacts.DebugApk)
+				}
+				if variant == "release" && cfg.Artifacts.ReleaseUnsigned != "" {
+					cands = append(cands, cfg.Artifacts.ReleaseUnsigned)
+				}
+			}
 			if variant == "debug" {
-				apk = filepath.Join(info.Root, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
+				cands = append(cands, android.DebugApkPath)
 			} else {
-				// signed release may live in data-root; try plain output first
-				apk = filepath.Join(info.Root, "app", "build", "outputs", "apk", "release", "app-release-unsigned.apk")
+				cands = append(cands, android.ReleaseApkPath)
+			}
+			// signed release may live in data-root; try plain output first
+			if resolved, err := android.ResolveApk(info.Root, cands...); err == nil {
+				apk = resolved
 			}
 		}
 		if _, err := os.Stat(apk); err != nil {
@@ -75,6 +88,16 @@ var installCmd = &cobra.Command{
 
 func init() {
 	installCmd.Flags().StringVar(&installDevice, "device", "", "adb serial (default: first device)")
+}
+
+// configForInstall loads the project config best-effort (nil when absent,
+// so callers fall back to well-known paths).
+func configForInstall(dataRoot, name string) (*config.ProjectConfig, error) {
+	cfg, err := config.LoadProject(storage.ProjectConfigPath(dataRoot, name))
+	if err != nil {
+		return nil, err
+	}
+	return &cfg, nil
 }
 
 // newestReleaseDir returns the lexicographically greatest version-like
