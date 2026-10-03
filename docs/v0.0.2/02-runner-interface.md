@@ -23,15 +23,27 @@ New file `internal/project/runner.go` (domain logic stays in `internal/`):
 
     type TestSpec struct { Kind string; Args []string }
     type Runner interface {
-        TestSpecs() []TestSpec          // valid kinds + argv (gradle tasks / go test)
-        BuildArgs(variant string) ([]string, error)  // variant validated here
-        Program() string               // binary to exec (wrapper path / "go")
-        BinaryBaseName() string        // from doc 01 helper
-        ArtifactGlobs(variant string) []string  // where outputs appear, for 09/10
+        Program() string                    // binary to exec (wrapper path / "go")
+        TestSpecs() []TestSpec              // valid kinds + argv
+        TestArgs(kind string) ([]string, error)
+        BuildArgs(variant, out string) ([]string, error)  // out ignored by gradle;
+                                                          // go stamps into it
+        BuildOutput(dataRoot, variant string) string      // go: builds/ path; gradle: ""
+        BinaryBaseName() string             // adopted from doc 01 helper
+        ArtifactGlobs(variant string) []string  // repo-relative outputs (gradle APKs;
+                                                // go: nil until doc 09 extends)
         VersionRead() (code, name string, err error)
         VersionWrite(name string) (code string, err error)
     }
-    func For(info Info) (Runner, error)  // returns gradleRunner / goRunner or "unsupported"
+    func For(info Info) (Runner, error)  // GradleRunner / GoRunner, else "unsupported"
+
+Dispatch sites use a type switch (`switch r.(type)` with exported
+`GradleRunner`/`GoRunner`), never a type-name string comparison, so `rg
+"android-gradle"` stays out of `cmd` and `internal/app` entirely — including
+`scan.go` (android seed config moves to `SeedConfig(info)` here) and
+`install.go` (gradle-only gate via type assertion). `cmd` keeps output
+formatting by branching on `code != ""` (gradle returns a code, go does not),
+not on type.
 
 `cmd` and TUI call `project.For(info)` once, then the interface. Task strings
 (`:app:testDebugUnitTest`, …) move into the gradle runner; the `:app:` prefix
@@ -40,21 +52,27 @@ No process changes in this doc — `build.Run` signature untouched.
 
 ## Files to touch
 
-- New `internal/project/runner.go` (+ test).
+- New `internal/project/runner.go` (+ test): interface, two exported
+  runners, `For`, and `SeedConfig(info)` (first-scan `config.ProjectConfig`
+  defaults; needs the `config` import — no cycle: config imports only storage).
 - `cmd/build.go`, `cmd/test.go`, `cmd/version.go`, `cmd/release.go`
   (`releaseAndroid/releaseGo` keep orchestration, take a Runner),
-  `internal/app/app.go` (`doBuild/doTest/doVersion` thin wrappers).
-- Doc 01's `BinaryBaseName` moves here as a method.
+  `cmd/scan.go` (use `SeedConfig`), `cmd/install.go` (gradle gate via type
+  assertion), `internal/app/app.go` (`doBuild/doTest/doVersion` thin wrappers).
+- Doc 01's `BinaryBaseName` becomes a Runner method (keep the package func;
+  the method delegates).
 
 ## Steps
 
-1. Add `runner.go` with the interface + two implementations + `For`.
+1. Add `runner.go` with the interface + two implementations + `For` +
+   `SeedConfig`.
 2. Rewire `cmd/build.go` and `cmd/test.go` first (smallest switches).
-3. Rewire `cmd/version.go`, then `releaseAndroid/releaseGo` internals.
+3. Rewire `cmd/version.go` (branch output on `code != ""`), `cmd/scan.go`
+   (`SeedConfig`), `cmd/install.go` (type assertion), then
+   `releaseAndroid/releaseGo` internals.
 4. Rewire TUI `doBuild/doTest/doVersion` to the same calls.
-5. Delete the now-duplicate task-string literals and `goBinaryOut`/
-   `projectVersionName` shims (or keep as thin wrappers if churn is high —
-   prefer deletion).
+5. Delete the now-duplicate task-string literals, `goBinaryOut`, and
+   `projectVersionName`.
 
 ## Tests to add
 

@@ -24,40 +24,39 @@ Use --set to write the project version file (never commits).`,
 		if err != nil {
 			return err
 		}
-		switch info.Type {
-		case "android-gradle":
-			if versionSet != "" {
-				next, err := project.SetGradleVersion(info.Root, info.VersionFile, versionSet)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("versionCode: %s\nversionName: %s\n", next, versionSet)
-				return nil
-			}
-			code, name, err := project.GradleVersion(info.Root, info.VersionFile)
+		r, err := project.For(info)
+		if err != nil {
+			return fmt.Errorf("version: %w (root %s)", err, info.Root)
+		}
+		if versionSet != "" {
+			next, err := r.VersionWrite(versionSet)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("versionCode: %s\nversionName: %s\n", code, name)
-			return nil
-		case "go":
-			if versionSet != "" {
-				if err := project.SetVersionFile(info.Root, "VERSION", versionSet); err != nil {
-					return err
-				}
+			if next == "" {
 				fmt.Printf("version: %s (wrote VERSION, not committed)\n", versionSet)
 				return nil
 			}
-			v, err := project.ReadVersionFile(info.Root, "VERSION")
-			if err != nil {
-				return fmt.Errorf("version: %w (project %s)", err, info.Root)
-			}
-			fmt.Printf("version: %s\n", v)
+			printVersion(next, versionSet)
 			return nil
-		default:
-			return fmt.Errorf("version: project type %q has no managed version file yet (root %s)", info.Type, info.Root)
 		}
+		code, name, err := r.VersionRead()
+		if err != nil {
+			return err
+		}
+		printVersion(code, name)
+		return nil
 	},
+}
+
+// printVersion renders a version with a code line only when the project type
+// has a numeric code (gradle); otherwise it prints the plain version.
+func printVersion(code, name string) {
+	if code != "" {
+		fmt.Printf("versionCode: %s\nversionName: %s\n", code, name)
+		return
+	}
+	fmt.Printf("version: %s\n", name)
 }
 
 func init() {

@@ -31,7 +31,11 @@ var installCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if info.Type != "android-gradle" {
+		r, err := project.For(info)
+		if err != nil {
+			return fmt.Errorf("install: %w", err)
+		}
+		if _, ok := r.(project.GradleRunner); !ok {
 			return fmt.Errorf("install: project type %q not supported", info.Type)
 		}
 		// Prefer packaged artifacts under data-root releases, fall back to Gradle outputs.

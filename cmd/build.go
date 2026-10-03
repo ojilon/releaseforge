@@ -38,12 +38,13 @@ Logs are streamed live and persisted under the data-root.`,
 			variant = buildVariant
 		}
 		variant = strings.ToLower(strings.TrimSpace(variant))
-		if variant != "debug" && variant != "release" {
-			return fmt.Errorf("build: unknown variant %q (want debug|release)", variant)
-		}
 		info, err := project.Detect(projectDir)
 		if err != nil {
 			return err
+		}
+		r, err := project.For(info)
+		if err != nil {
+			return fmt.Errorf("build: %w", err)
 		}
 		root, _, err := requireDataRoot()
 		if err != nil {
@@ -52,29 +53,16 @@ Logs are streamed live and persisted under the data-root.`,
 		if err := storage.EnsureProjectLayout(root, info.Name); err != nil {
 			return err
 		}
-		var prog string
-		var bargs []string
-		var extra string
-		switch info.Type {
-		case "android-gradle":
-			prog = build.GradleWrapper(info.Root)
-			bargs = []string{"assembleDebug"}
-			if variant == "release" {
-				bargs = []string{"assembleRelease"}
-			}
-			if strings.TrimSpace(buildABIs) != "" && verbose {
-				fmt.Printf("note: --abis %s honoured via gradle.properties aurora.abiFilters (edit file before build)\n", buildABIs)
-			}
-		case "go":
-			stamp := projectVersionName(info)
-			out := goBinaryOut(root, info, variant)
-			prog, bargs = "go", build.GoBuildArgs(info.Root, out, stamp, variant)
-			extra = out
-		default:
-			return fmt.Errorf("build: project type %q not supported yet (root %s)", info.Type, info.Root)
+		out := r.BuildOutput(root, variant)
+		bargs, err := r.BuildArgs(variant, out)
+		if err != nil {
+			return err
+		}
+		if _, ok := r.(project.GradleRunner); ok && strings.TrimSpace(buildABIs) != "" && verbose {
+			fmt.Printf("note: --abis %s honoured via gradle.properties aurora.abiFilters (edit file before build)\n", buildABIs)
 		}
 		logPath := rflog.LogPath(storage.LogsDir(root, info.Name), "build-"+variant)
-		res := build.Run(prog, bargs, build.Options{
+		res := build.Run(r.Program(), bargs, build.Options{
 			Dir:     info.Root,
 			LogPath: logPath,
 			OnLine:  func(t string, _ bool) { fmt.Println(t) },
@@ -87,21 +75,12 @@ Logs are streamed live and persisted under the data-root.`,
 			}
 			return fmt.Errorf("build %s failed", variant)
 		}
-		if extra != "" {
-			fmt.Printf("binary: %s\n", extra)
+		if out != "" {
+			fmt.Printf("binary: %s\n", out)
 		}
 		fmt.Printf("build %s succeeded\n", variant)
 		return nil
 	},
-}
-
-// projectVersionName returns the display version for stamping (VERSION content
-// for go, versionName for gradle, "dev" fallback).
-func projectVersionName(info project.Info) string {
-	if _, name, err := project.CurrentVersion(info); err == nil && name != "" {
-		return name
-	}
-	return "dev"
 }
 
 func init() {

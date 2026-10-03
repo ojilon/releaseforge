@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/ojilon/releaseforge/internal/build"
 	"github.com/ojilon/releaseforge/internal/project"
@@ -38,6 +37,14 @@ Logs land under <data-root>/projects/<name>/logs.`,
 		if err != nil {
 			return err
 		}
+		r, err := project.For(info)
+		if err != nil {
+			return fmt.Errorf("test: %w", err)
+		}
+		targs, err := r.TestArgs(kind)
+		if err != nil {
+			return err
+		}
 		root, _, err := requireDataRoot()
 		if err != nil {
 			return err
@@ -45,28 +52,8 @@ Logs land under <data-root>/projects/<name>/logs.`,
 		if err := storage.EnsureProjectLayout(root, info.Name); err != nil {
 			return err
 		}
-		var prog string
-		var targs []string
-		switch info.Type {
-		case "android-gradle":
-			switch kind {
-			case "unit":
-				targs = []string{":app:testDebugUnitTest"}
-			case "instrumented":
-				targs = []string{":app:connectedDebugAndroidTest"}
-			case "all":
-				targs = []string{":app:testDebugUnitTest", ":app:connectedDebugAndroidTest"}
-			default:
-				return fmt.Errorf("test: unknown kind %q (want unit|instrumented|all)", kind)
-			}
-			prog = build.GradleWrapper(info.Root)
-		case "go":
-			prog, targs = "go", build.GoTestArgs()
-		default:
-			return fmt.Errorf("test: project type %q not supported yet (root %s)", info.Type, info.Root)
-		}
 		logPath := rflog.LogPath(storage.LogsDir(root, info.Name), "test-"+kind)
-		res := build.Run(prog, targs, build.Options{
+		res := build.Run(r.Program(), targs, build.Options{
 			Dir:     info.Root,
 			LogPath: logPath,
 			OnLine:  func(t string, _ bool) { fmt.Println(t) },
@@ -86,13 +73,4 @@ Logs land under <data-root>/projects/<name>/logs.`,
 
 func init() {
 	testCmd.Flags().StringVar(&testKind, "kind", "", "unit | instrumented | all (android only)")
-}
-
-// goBinaryOut returns the builds-dir output path for a Go build.
-func goBinaryOut(dataRoot string, info project.Info, variant string) string {
-	base := project.BinaryBaseName(info)
-	if variant == "release" {
-		base += "-release"
-	}
-	return filepath.Join(storage.BuildsDir(dataRoot, info.Name), build.GoBinaryName(base))
 }

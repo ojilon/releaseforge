@@ -363,38 +363,30 @@ func (m *Model) doVersion(args []string) string {
 	if err != nil {
 		return tui.ErrorStyle.Render("version: " + err.Error())
 	}
+	r, err := project.For(info)
+	if err != nil {
+		return tui.ErrorStyle.Render("version: " + err.Error())
+	}
 	header := "releaseforge: " + version.ToolVersion + "\n"
-	switch info.Type {
-	case "android-gradle":
-		if len(args) >= 2 && args[0] == "--set" {
-			next, err := project.SetGradleVersion(info.Root, info.VersionFile, args[1])
-			if err != nil {
-				return tui.ErrorStyle.Render("version: " + err.Error())
-			}
-			m.refreshProject()
-			return header + fmt.Sprintf("versionCode: %s\nversionName: %s", next, args[1])
-		}
-		code, name, err := project.GradleVersion(info.Root, info.VersionFile)
+	if len(args) >= 2 && args[0] == "--set" {
+		next, err := r.VersionWrite(args[1])
 		if err != nil {
 			return tui.ErrorStyle.Render("version: " + err.Error())
 		}
-		return header + fmt.Sprintf("versionCode: %s\nversionName: %s", code, name)
-	case "go":
-		if len(args) >= 2 && args[0] == "--set" {
-			if err := project.SetVersionFile(info.Root, "VERSION", args[1]); err != nil {
-				return tui.ErrorStyle.Render("version: " + err.Error())
-			}
-			m.refreshProject()
+		m.refreshProject()
+		if next == "" {
 			return header + fmt.Sprintf("version: %s (wrote VERSION, not committed)", args[1])
 		}
-		v, err := project.ReadVersionFile(info.Root, "VERSION")
-		if err != nil {
-			return tui.ErrorStyle.Render("version: " + err.Error())
-		}
-		return header + fmt.Sprintf("version: %s", v)
-	default:
-		return header + fmt.Sprintf("version: type %q has no managed version file", info.Type)
+		return header + fmt.Sprintf("versionCode: %s\nversionName: %s", next, args[1])
 	}
+	code, name, err := r.VersionRead()
+	if err != nil {
+		return tui.ErrorStyle.Render("version: " + err.Error())
+	}
+	if code != "" {
+		return header + fmt.Sprintf("versionCode: %s\nversionName: %s", code, name)
+	}
+	return header + fmt.Sprintf("version: %s", name)
 }
 
 func (m *Model) doBuild(variant string) string {
@@ -406,32 +398,19 @@ func (m *Model) doBuild(variant string) string {
 	if err != nil {
 		return tui.ErrorStyle.Render("build: " + err.Error())
 	}
-	var prog string
-	var bargs []string
-	switch info.Type {
-	case "android-gradle":
-		prog = build.GradleWrapper(info.Root)
-		bargs = []string{"assembleDebug"}
-		if variant == "release" {
-			bargs = []string{"assembleRelease"}
-		}
-	case "go":
-		stamp := "dev"
-		if _, name, err := project.CurrentVersion(info); err == nil && name != "" {
-			stamp = name
-		}
-		out := filepath.Join(storage.BuildsDir(m.dataRoot, info.Name), build.GoBinaryName(project.BinaryBaseName(info)))
-		if variant == "release" {
-			out = filepath.Join(storage.BuildsDir(m.dataRoot, info.Name), build.GoBinaryName(project.BinaryBaseName(info)+"-release"))
-		}
-		prog, bargs = "go", build.GoBuildArgs(info.Root, out, stamp, variant)
-	default:
-		return tui.ErrorStyle.Render("build: unsupported type " + info.Type)
+	r, err := project.For(info)
+	if err != nil {
+		return tui.ErrorStyle.Render("build: " + err.Error())
 	}
 	_ = storage.EnsureProjectLayout(m.dataRoot, info.Name)
+	out := r.BuildOutput(m.dataRoot, variant)
+	bargs, err := r.BuildArgs(variant, out)
+	if err != nil {
+		return tui.ErrorStyle.Render("build: " + err.Error())
+	}
 	logPath := rflog.LogPath(storage.LogsDir(m.dataRoot, info.Name), "build-"+variant)
 	var lines []string
-	res := build.Run(prog, bargs, build.Options{
+	res := build.Run(r.Program(), bargs, build.Options{
 		Dir: info.Root, LogPath: logPath,
 		OnLine: func(t string, _ bool) { lines = append(lines, t) },
 	})
@@ -459,30 +438,18 @@ func (m *Model) doTest(kind string) string {
 	if err != nil {
 		return tui.ErrorStyle.Render("test: " + err.Error())
 	}
-	var prog string
-	var tasks []string
-	switch info.Type {
-	case "android-gradle":
-		switch kind {
-		case "unit":
-			tasks = []string{":app:testDebugUnitTest"}
-		case "instrumented":
-			tasks = []string{":app:connectedDebugAndroidTest"}
-		case "all":
-			tasks = []string{":app:testDebugUnitTest", ":app:connectedDebugAndroidTest"}
-		default:
-			return tui.ErrorStyle.Render("test: want unit|instrumented|all")
-		}
-		prog = build.GradleWrapper(info.Root)
-	case "go":
-		prog, tasks = "go", build.GoTestArgs()
-	default:
-		return tui.ErrorStyle.Render("test: unsupported type " + info.Type)
+	r, err := project.For(info)
+	if err != nil {
+		return tui.ErrorStyle.Render("test: " + err.Error())
+	}
+	tasks, err := r.TestArgs(kind)
+	if err != nil {
+		return tui.ErrorStyle.Render("test: " + err.Error())
 	}
 	_ = storage.EnsureProjectLayout(m.dataRoot, info.Name)
 	logPath := rflog.LogPath(storage.LogsDir(m.dataRoot, info.Name), "test-"+kind)
 	var lines []string
-	res := build.Run(prog, tasks, build.Options{
+	res := build.Run(r.Program(), tasks, build.Options{
 		Dir: info.Root, LogPath: logPath,
 		OnLine: func(t string, _ bool) { lines = append(lines, t) },
 	})

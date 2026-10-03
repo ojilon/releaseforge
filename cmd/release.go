@@ -59,18 +59,22 @@ and reports the artifact paths (exit 0).`,
 		if err != nil {
 			return err
 		}
-		switch info.Type {
-		case "android-gradle":
-			return releaseAndroid(info, version)
-		case "go":
-			return releaseGo(info, version)
+		r, err := project.For(info)
+		if err != nil {
+			return fmt.Errorf("release: %w", err)
+		}
+		switch r.(type) {
+		case project.GradleRunner:
+			return releaseAndroid(info, r, version)
+		case project.GoRunner:
+			return releaseGo(info, r, version)
 		default:
 			return fmt.Errorf("release: project type %q not supported yet", info.Type)
 		}
 	},
 }
 
-func releaseAndroid(info project.Info, version string) error {
+func releaseAndroid(info project.Info, r project.Runner, version string) error {
 	root, _, err := requireDataRoot()
 	if err != nil {
 		return err
@@ -102,20 +106,32 @@ func releaseAndroid(info project.Info, version string) error {
 	}
 
 	fmt.Printf("==> version %s (gradle.properties, not committed)\n", version)
-	if _, err := project.SetGradleVersion(info.Root, info.VersionFile, version); err != nil {
+	if _, err := r.VersionWrite(version); err != nil {
 		return fmt.Errorf("set version: %w", err)
 	}
 
-	wrapper := build.GradleWrapper(info.Root)
+	prog := r.Program()
+	unitArgs, err := r.TestArgs("unit")
+	if err != nil {
+		return err
+	}
+	debugArgs, err := r.BuildArgs("debug", "")
+	if err != nil {
+		return err
+	}
+	releaseArgs, err := r.BuildArgs("release", "")
+	if err != nil {
+		return err
+	}
 	if !releaseSkipTests {
-		if err := runStep(root, info, "test-unit", wrapper, ":app:testDebugUnitTest"); err != nil {
+		if err := runStep(root, info, "test-unit", prog, unitArgs...); err != nil {
 			return err
 		}
 	}
-	if err := runStep(root, info, "build-debug", wrapper, "assembleDebug"); err != nil {
+	if err := runStep(root, info, "build-debug", prog, debugArgs...); err != nil {
 		return err
 	}
-	if err := runStep(root, info, "build-release", wrapper, "assembleRelease"); err != nil {
+	if err := runStep(root, info, "build-release", prog, releaseArgs...); err != nil {
 		return err
 	}
 
@@ -168,7 +184,7 @@ func releaseAndroid(info project.Info, version string) error {
 	return publishTagAndRelease(info.Root, version, notesPath, []string{debugApk, releaseApk, zipPath}, verDir)
 }
 
-func releaseGo(info project.Info, version string) error {
+func releaseGo(info project.Info, r project.Runner, version string) error {
 	root, _, err := requireDataRoot()
 	if err != nil {
 		return err
@@ -192,20 +208,28 @@ func releaseGo(info project.Info, version string) error {
 	}
 
 	fmt.Printf("==> version %s (VERSION file, not committed)\n", version)
-	if err := project.SetVersionFile(info.Root, "VERSION", version); err != nil {
+	if _, err := r.VersionWrite(version); err != nil {
 		return fmt.Errorf("set version: %w", err)
 	}
 
 	if !releaseSkipTests {
-		if err := runStep(root, info, "test", "go", build.GoTestArgs()...); err != nil {
+		testArgs, err := r.TestArgs("unit")
+		if err != nil {
+			return err
+		}
+		if err := runStep(root, info, "test", r.Program(), testArgs...); err != nil {
 			return err
 		}
 	}
 
-	out := filepath.Join(verDir, build.GoBinaryName(project.BinaryBaseName(info)+"-"+version))
+	out := filepath.Join(verDir, build.GoBinaryName(r.BinaryBaseName()+"-"+version))
 	fmt.Printf("==> build release → %s\n", out)
+	buildArgs, err := r.BuildArgs("release", out)
+	if err != nil {
+		return err
+	}
 	logPath := rflog.LogPath(storage.LogsDir(root, info.Name), "build-release")
-	res := build.Run("go", build.GoBuildArgs(info.Root, out, version, "release"), build.Options{
+	res := build.Run(r.Program(), buildArgs, build.Options{
 		Dir:     info.Root,
 		LogPath: logPath,
 		OnLine:  func(t string, _ bool) { fmt.Println(t) },

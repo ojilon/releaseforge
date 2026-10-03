@@ -1,7 +1,7 @@
 # v0.0.2 progress
 
 - [x] 01 cleanup-and-bugfixes
-- [ ] 02 runner-interface
+- [x] 02 runner-interface
 - [ ] 07 scan-cache-and-config
 - [ ] 06 android-scan-gradle
 - [ ] 08 version-and-bump

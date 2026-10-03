@@ -36,32 +36,7 @@ updates the recent-projects list. Re-run scan/rescan to refresh.`,
 			return err
 		}
 		// Minimal project config (only written once; scan cache is the live snapshot).
-		pcfg := config.ProjectConfig{
-			Type: info.Type,
-			Name: info.Name,
-			Root: info.Root,
-		}
-		if info.VersionFile != "" {
-			pcfg.Version = config.VersionConfig{File: info.VersionFile, CodeKey: info.CodeKey, NameKey: info.NameKey}
-		}
-		if info.Type == "android-gradle" {
-			pcfg.Build = config.BuildConfig{
-				GradleWrapper: true,
-				Tasks: map[string]string{
-					"unit_test":         ":app:testDebugUnitTest",
-					"instrumented_test": ":app:connectedDebugAndroidTest",
-					"assemble_debug":    "assembleDebug",
-					"assemble_release":  "assembleRelease",
-				},
-				AbiFiltersKey: "aurora.abiFilters",
-				NdkVersionKey: "ndkVersion",
-			}
-			pcfg.Artifacts = &config.ArtifactsConfig{
-				DebugApk:        "app/build/outputs/apk/debug/app-debug.apk",
-				ReleaseUnsigned: "app/build/outputs/apk/release/app-release-unsigned.apk",
-				AppName:         info.Name,
-			}
-		}
+		pcfg := project.SeedConfig(info)
 		cfgPath := storage.ProjectConfigPath(root, info.Name)
 		if !storage.Exists(cfgPath) {
 			if err := config.SaveProject(cfgPath, pcfg); err != nil {
