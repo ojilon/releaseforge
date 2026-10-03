@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/ojilon/releaseforge/internal/config"
@@ -35,13 +36,26 @@ updates the recent-projects list. Re-run scan/rescan to refresh.`,
 		if err != nil {
 			return err
 		}
-		// Minimal project config (only written once; scan cache is the live snapshot).
-		pcfg := project.SeedConfig(info)
+		// Merge fresh detection with seed + preserved user edits; the config is
+		// rewritten when anything changed.
+		var existing *config.ProjectConfig
 		cfgPath := storage.ProjectConfigPath(root, info.Name)
-		if !storage.Exists(cfgPath) {
-			if err := config.SaveProject(cfgPath, pcfg); err != nil {
+		if loaded, err := config.LoadProject(cfgPath); err == nil {
+			existing = &loaded
+		}
+		merged, notes := project.MergeConfig(project.SeedConfig(info),
+			info.Root+"/.releaseforge.json", existing)
+		savedAs := "unchanged"
+		if existing == nil {
+			if err := config.SaveProject(cfgPath, merged); err != nil {
 				return fmt.Errorf("write project config: %w", err)
 			}
+			savedAs = "written"
+		} else if !configsEqual(merged, *existing) {
+			if err := config.SaveProject(cfgPath, merged); err != nil {
+				return fmt.Errorf("write project config: %w", err)
+			}
+			savedAs = "updated"
 		}
 		if err := history.TouchRecent(root, info.Root, info.Name, info.Type, true); err != nil {
 			return fmt.Errorf("update recent: %w", err)
@@ -71,8 +85,24 @@ updates the recent-projects list. Re-run scan/rescan to refresh.`,
 			gitStr = fmt.Sprintf("%s @ %s (%d commits, %d tags)",
 				snap.Git.Branch, snap.Git.Head, len(snap.Git.RecentCommits), len(snap.Git.RecentTags))
 		}
-		fmt.Printf("Project: %s\nRoot:    %s\nType:    %s\nVersion: %s\nGit:     %s\nTools:   %s\nConfig:  %s\nCache:   %s\n",
-			info.Name, info.Root, info.Type, versionStr, gitStr, tools, cfgPath, scanPath)
+		fmt.Printf("Project: %s\nRoot:    %s\nType:    %s\nVersion: %s\nGit:     %s\nTools:   %s\nConfig:  %s (%s)\nCache:   %s\n",
+			info.Name, info.Root, info.Type, versionStr, gitStr, tools, cfgPath, savedAs, scanPath)
+		for _, n := range notes {
+			fmt.Printf("note: %s\n", n)
+		}
 		return nil
 	},
+}
+
+// configsEqual compares two project configs by their canonical JSON.
+func configsEqual(a, b config.ProjectConfig) bool {
+	aj, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	bj, err := json.Marshal(b)
+	if err != nil {
+		return false
+	}
+	return string(aj) == string(bj)
 }

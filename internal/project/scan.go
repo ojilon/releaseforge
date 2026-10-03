@@ -2,27 +2,30 @@ package project
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/ojilon/releaseforge/internal/config"
 	"github.com/ojilon/releaseforge/internal/git"
 	"github.com/ojilon/releaseforge/internal/storage"
+	"github.com/ojilon/releaseforge/internal/version"
 )
 
 // Snapshot is the persisted scan result (docs/09-scan-foundation.md schema v1).
 // Unknown fields are ignored by older readers.
 type Snapshot struct {
-	ScannedAt  string         `json:"scanned_at"`
-	Root       string         `json:"root"`
-	Name       string         `json:"name"`
-	Type       string         `json:"type"`
-	Git        GitSnapshot    `json:"git"`
-	Tools      []ToolHit      `json:"tools"`
-	Frameworks []ToolHit      `json:"frameworks"`
-	Configs    []ConfigHit    `json:"configs"`
-	Version    VersionSnap    `json:"version"`
+	ScannedAt  string          `json:"scanned_at"`
+	Root       string          `json:"root"`
+	Name       string          `json:"name"`
+	Type       string          `json:"type"`
+	Git        GitSnapshot     `json:"git"`
+	Tools      []ToolHit       `json:"tools"`
+	Frameworks []ToolHit       `json:"frameworks"`
+	Configs    []ConfigHit     `json:"configs"`
+	Version    VersionSnap     `json:"version"`
 	Hints      map[string]bool `json:"hints"`
 }
 
@@ -197,7 +200,8 @@ func Scan(dir string) (Snapshot, Info, error) {
 	return snap, info, nil
 }
 
-// WriteScan persists the snapshot to cache/scan.json (creating dirs).
+// WriteScan persists the snapshot to cache/scan.json plus freshness metadata
+// (creating dirs). Callers overwrite both on every scan.
 func WriteScan(dataRoot string, snap Snapshot) (string, error) {
 	if err := storage.EnsureProjectLayout(dataRoot, snap.Name); err != nil {
 		return "", err
@@ -210,7 +214,176 @@ func WriteScan(dataRoot string, snap Snapshot) (string, error) {
 	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
 		return "", err
 	}
+	if err := writeMeta(dataRoot, snap); err != nil {
+		return "", err
+	}
 	return path, nil
+}
+
+// Meta tracks scan freshness: which root was scanned, when, and by which tool.
+type Meta struct {
+	ScannedAt   string `json:"scanned_at"`
+	ToolVersion string `json:"tool_version"`
+	Root        string `json:"root"`
+	RootMtime   int64  `json:"root_mtime,omitempty"`
+}
+
+func metaPath(dataRoot, project string) string {
+	return filepath.Join(storage.CacheDir(dataRoot, project), "meta.json")
+}
+
+func writeMeta(dataRoot string, snap Snapshot) error {
+	var mtime int64
+	if st, err := os.Stat(snap.Root); err == nil {
+		mtime = st.ModTime().Unix()
+	}
+	meta := Meta{ScannedAt: snap.ScannedAt, ToolVersion: version.ToolVersion, Root: snap.Root, RootMtime: mtime}
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(metaPath(dataRoot, snap.Name), append(data, '\n'), 0o644)
+}
+
+// LoadMeta reads cache/meta.json.
+func LoadMeta(dataRoot, project string) (Meta, error) {
+	var m Meta
+	data, err := os.ReadFile(metaPath(dataRoot, project))
+	if err != nil {
+		return m, err
+	}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return m, fmt.Errorf("parse %s: %w", metaPath(dataRoot, project), err)
+	}
+	return m, nil
+}
+
+// LoadScan reads cache/scan.json.
+func LoadScan(dataRoot, project string) (Snapshot, error) {
+	var snap Snapshot
+	path := storage.ScanFile(dataRoot, project)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return snap, err
+	}
+	if err := json.Unmarshal(data, &snap); err != nil {
+		return snap, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return snap, nil
+}
+
+// Fresh reports whether the cached scan belongs to root. Mtime is
+// informational only; only an explicit scan refreshes the cache.
+func Fresh(dataRoot, project, root string) bool {
+	meta, err := LoadMeta(dataRoot, project)
+	if err != nil {
+		return false
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	return filepath.Clean(meta.Root) == filepath.Clean(abs)
+}
+
+// CachedVersion returns the cached version snapshot when the cache is fresh
+// and holds a version. Display paths (status, TUI header) prefer this over
+// live detection; safety-critical paths (build/release/install) do not.
+func CachedVersion(dataRoot, project, root string) (VersionSnap, bool) {
+	if !Fresh(dataRoot, project, root) {
+		return VersionSnap{}, false
+	}
+	snap, err := LoadScan(dataRoot, project)
+	if err != nil || snap.Version.Name == "" {
+		return VersionSnap{}, false
+	}
+	return snap.Version, true
+}
+
+// MergeConfig combines fresh detection with the repo-local seed and preserved
+// user edits. Tool-owned keys (type, root, name, version.*, build defaults)
+// always come from detection; user-owned keys (signing, github,
+// artifacts.app_name, custom task entries) survive from the existing config.
+// Returns the merged config plus human-readable note lines.
+func MergeConfig(detected config.ProjectConfig, seedPath string, existing *config.ProjectConfig) (config.ProjectConfig, []string) {
+	merged := detected
+	var notes []string
+	if data, err := os.ReadFile(seedPath); err == nil {
+		if looksSecret(data) {
+			notes = append(notes, "warning: .releaseforge.json ignored (secret-looking key present)")
+		} else {
+			var seed config.ProjectConfig
+			if err := json.Unmarshal(data, &seed); err != nil {
+				notes = append(notes, fmt.Sprintf("warning: .releaseforge.json unreadable (%v)", err))
+			} else {
+				applySeed(&merged, seed, &notes)
+			}
+		}
+	}
+	if existing != nil {
+		if existing.Signing != nil {
+			merged.Signing = existing.Signing
+		}
+		if existing.Github != nil {
+			merged.Github = existing.Github
+		}
+		if existing.Artifacts != nil && strings.TrimSpace(existing.Artifacts.AppName) != "" {
+			if merged.Artifacts == nil {
+				merged.Artifacts = &config.ArtifactsConfig{}
+			}
+			merged.Artifacts.AppName = existing.Artifacts.AppName
+		}
+		for k, v := range existing.Build.Tasks {
+			if merged.Build.Tasks == nil {
+				merged.Build.Tasks = map[string]string{}
+			}
+			merged.Build.Tasks[k] = v
+		}
+	}
+	return merged, notes
+}
+
+func applySeed(merged *config.ProjectConfig, seed config.ProjectConfig, notes *[]string) {
+	if strings.TrimSpace(seed.Version.File) != "" {
+		merged.Version = seed.Version
+		*notes = append(*notes, "seed: version source from .releaseforge.json")
+	}
+	for k, v := range seed.Build.Tasks {
+		if merged.Build.Tasks == nil {
+			merged.Build.Tasks = map[string]string{}
+		}
+		merged.Build.Tasks[k] = v
+	}
+	if len(seed.Build.Tasks) > 0 {
+		*notes = append(*notes, "seed: build tasks from .releaseforge.json")
+	}
+	if seed.Signing != nil {
+		merged.Signing = seed.Signing
+		*notes = append(*notes, "seed: signing from .releaseforge.json")
+	}
+	if seed.Github != nil {
+		merged.Github = seed.Github
+		*notes = append(*notes, "seed: github from .releaseforge.json")
+	}
+	if seed.Artifacts != nil && strings.TrimSpace(seed.Artifacts.AppName) != "" {
+		if merged.Artifacts == nil {
+			merged.Artifacts = &config.ArtifactsConfig{}
+		}
+		merged.Artifacts.AppName = seed.Artifacts.AppName
+		*notes = append(*notes, "seed: app name from .releaseforge.json")
+	}
+}
+
+// looksSecret reports whether raw seed JSON mentions secret-like keys.
+// The seed must never carry credentials; matches cause the seed to be skipped.
+func looksSecret(data []byte) bool {
+	lower := strings.ToLower(string(data))
+	for _, k := range []string{"password", "passwd", "secret", "token", "ks-pass"} {
+		if strings.Contains(lower, `"`+k+`"`) || strings.Contains(lower, `'`+k+`'`) {
+			return true
+		}
+	}
+	return false
 }
 
 func wailsProductVersion(path string) string {

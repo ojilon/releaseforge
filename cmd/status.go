@@ -13,16 +13,20 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show project scan summary, last build, version, device, config health",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		info, err := project.Detect(projectDir)
-		if err != nil {
-			return err
-		}
 		root, cfgPath, err := resolveDataRoot()
 		if err != nil {
 			return err
 		}
+		info, err := project.Detect(projectDir)
+		if err != nil {
+			return err
+		}
 		ver := info.Type
-		if code, name, err := project.CurrentVersion(info); err == nil && name != "" {
+		fromCache := false
+		if vsnap, ok := project.CachedVersion(root, info.Name, info.Root); ok {
+			fromCache = true
+			ver = formatCachedVersion(vsnap, info.VersionFile)
+		} else if code, name, err := project.CurrentVersion(info); err == nil && name != "" {
 			if code != "" {
 				ver = fmt.Sprintf("%s (code %s) from %s", name, code, info.VersionFile)
 			} else if info.VersionFile != "" {
@@ -31,8 +35,8 @@ var statusCmd = &cobra.Command{
 				ver = name
 			}
 		}
-		fmt.Printf("project:   %s\nroot:      %s\ntype:      %s\nversion:   %s\ndata-root: %s\nconfig:    %s\n",
-			info.Name, info.Root, info.Type, ver, root, cfgPath)
+		fmt.Printf("project:   %s\nroot:      %s\ntype:      %s\nversion:   %s%s\ndata-root: %s\nconfig:    %s\n",
+			info.Name, info.Root, info.Type, ver, cacheMark(fromCache), root, cfgPath)
 		if git.IsRepo(info.Root) {
 			fmt.Printf("git:       %s @ %s (clean=%v, tag=%s)\n",
 				git.CurrentBranch(info.Root), git.Head(info.Root), git.IsClean(info.Root), git.LatestTag(info.Root))
@@ -46,4 +50,25 @@ var statusCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// formatCachedVersion renders a cached version snapshot like live output.
+func formatCachedVersion(vsnap project.VersionSnap, versionFile string) string {
+	if vsnap.Code != "" {
+		return fmt.Sprintf("%s (code %s) from %s", vsnap.Name, vsnap.Code, vsnap.File)
+	}
+	if vsnap.File != "" {
+		return fmt.Sprintf("%s from %s", vsnap.Name, vsnap.File)
+	}
+	if versionFile != "" {
+		return fmt.Sprintf("%s from %s", vsnap.Name, versionFile)
+	}
+	return vsnap.Name
+}
+
+func cacheMark(fromCache bool) string {
+	if fromCache {
+		return " [cache]"
+	}
+	return ""
 }
