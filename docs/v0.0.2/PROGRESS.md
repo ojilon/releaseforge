@@ -4,7 +4,7 @@
 - [x] 02 runner-interface
 - [x] 07 scan-cache-and-config
 - [x] 06 android-scan-gradle
-- [ ] 08 version-and-bump
+- [x] 08 version-and-bump
 - [ ] 03 async-process-and-logstream
 - [ ] 04 error-parsing
 - [ ] 05 log-commands

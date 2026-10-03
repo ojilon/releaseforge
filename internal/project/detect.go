@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/ojilon/releaseforge/internal/storage"
@@ -21,6 +20,8 @@ type Info struct {
 	Type string
 	// VersionFile is the relative version source of truth, if known.
 	VersionFile string
+	// VersionSource is properties|kts|file|none ("" when unknown/legacy).
+	VersionSource string
 	// CodeKey / NameKey for gradle-style projects.
 	CodeKey string
 	NameKey string
@@ -63,8 +64,13 @@ func Detect(dir string) (Info, error) {
 		if anyExists(abs, "app/build.gradle", "app/build.gradle.kts") != "" ||
 			fileExists(abs, "gradle.properties") ||
 			anyExists(abs, "gradlew", "gradlew.bat") != "" {
+			source, vfile := DetectVersionSource(abs)
+			if source == "" {
+				vfile = "gradle.properties" // legacy default; reads fail honestly
+			}
 			return Info{Root: abs, Name: name, Type: "android-gradle",
-				VersionFile: "gradle.properties", CodeKey: "app.versionCode", NameKey: "app.versionName"}, nil
+				VersionFile: vfile, VersionSource: source,
+				CodeKey: "app.versionCode", NameKey: "app.versionName"}, nil
 		}
 	}
 	// 2. Wails.
@@ -88,100 +94,13 @@ func Detect(dir string) (Info, error) {
 	}
 	// 6. Go module. VERSION file at root is the version source when present.
 	if fileExists(abs, "go.mod") {
-		vf := "go.mod"
+		vf, vs := "go.mod", SourceNone
 		if fileExists(abs, "VERSION") {
-			vf = "VERSION"
+			vf, vs = "VERSION", SourceFile
 		}
-		return Info{Root: abs, Name: name, Type: "go", VersionFile: vf}, nil
+		return Info{Root: abs, Name: name, Type: "go", VersionFile: vf, VersionSource: vs}, nil
 	}
 	return Info{Root: abs, Name: name, Type: "generic", VersionFile: ""}, nil
-}
-
-var (
-	codeRe = regexp.MustCompile(`(?m)^app\.versionCode\s*=\s*(.+?)\s*$`)
-	nameRe = regexp.MustCompile(`(?m)^app\.versionName\s*=\s*(.+?)\s*$`)
-)
-
-// GradleVersion reads code + name from gradle.properties.
-func GradleVersion(projectRoot, file string) (code, name string, err error) {
-	if file == "" {
-		file = "gradle.properties"
-	}
-	data, err := os.ReadFile(filepath.Join(projectRoot, file))
-	if err != nil {
-		return "", "", err
-	}
-	text := string(data)
-	cm := codeRe.FindStringSubmatch(text)
-	nm := nameRe.FindStringSubmatch(text)
-	if cm == nil || nm == nil {
-		return "", "", fmt.Errorf("version info not found in %s (want app.versionCode/app.versionName)", file)
-	}
-	return strings.TrimSpace(cm[1]), strings.TrimSpace(nm[1]), nil
-}
-
-// SetGradleVersion sets versionName and increments versionCode by 1.
-// Semantics match scripts/version.py.
-func SetGradleVersion(projectRoot, file, versionName string) (newCode string, err error) {
-	if strings.TrimSpace(versionName) == "" {
-		return "", fmt.Errorf("version name must not be empty")
-	}
-	if file == "" {
-		file = "gradle.properties"
-	}
-	path := filepath.Join(projectRoot, file)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	text := string(data)
-	cm := codeRe.FindStringSubmatch(text)
-	if cm == nil {
-		return "", fmt.Errorf("app.versionCode not found in %s", file)
-	}
-	if nameRe.FindStringSubmatch(text) == nil {
-		return "", fmt.Errorf("app.versionName not found in %s", file)
-	}
-	var current int
-	if _, err := fmt.Sscanf(strings.TrimSpace(cm[1]), "%d", &current); err != nil {
-		return "", fmt.Errorf("invalid app.versionCode %q: %w", cm[1], err)
-	}
-	next := current + 1
-	text = codeRe.ReplaceAllString(text, fmt.Sprintf("app.versionCode=%d", next))
-	text = nameRe.ReplaceAllString(text, "app.versionName="+versionName)
-	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%d", next), nil
-}
-
-// ReadVersionFile reads a plain version file (e.g. VERSION). No auto-commit;
-// callers decide when to commit.
-func ReadVersionFile(projectRoot, file string) (string, error) {
-	if strings.TrimSpace(file) == "" {
-		file = "VERSION"
-	}
-	data, err := os.ReadFile(filepath.Join(projectRoot, file))
-	if err != nil {
-		return "", err
-	}
-	v := strings.TrimSpace(string(data))
-	if v == "" {
-		return "", fmt.Errorf("%s is empty", file)
-	}
-	return v, nil
-}
-
-// SetVersionFile writes a plain version file (e.g. VERSION). No commit.
-func SetVersionFile(projectRoot, file, version string) error {
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return fmt.Errorf("version must not be empty")
-	}
-	if strings.TrimSpace(file) == "" {
-		file = "VERSION"
-	}
-	return os.WriteFile(filepath.Join(projectRoot, file), []byte(version+"\n"), 0o644)
 }
 
 // BinaryBaseName returns the file-safe base name for built binaries.
@@ -191,23 +110,4 @@ func BinaryBaseName(info Info) string {
 		return "app"
 	}
 	return info.Name
-}
-
-// CurrentVersion returns (code, name) for known types; generic returns ("", "", nil).
-func CurrentVersion(info Info) (code, name string, err error) {
-	switch info.Type {
-	case "android-gradle":
-		return GradleVersion(info.Root, info.VersionFile)
-	case "go":
-		if info.VersionFile == "VERSION" || fileExists(info.Root, "VERSION") {
-			v, err := ReadVersionFile(info.Root, "VERSION")
-			if err != nil {
-				return "", "", err
-			}
-			return "", v, nil
-		}
-		return "", "", nil
-	default:
-		return "", "", nil
-	}
 }

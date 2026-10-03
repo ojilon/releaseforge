@@ -37,8 +37,11 @@ type Runner interface {
 	ArtifactGlobs(variant string) []string
 	// VersionRead returns (code, name); code is "" when the type has none.
 	VersionRead() (code, name string, err error)
-	// VersionWrite sets the version name (gradle also bumps the code).
+	// VersionWrite sets the version name (gradle-properties also bumps code).
 	VersionWrite(name string) (newCode string, err error)
+	// BumpCode increments a numeric version code without renaming.
+	// Only gradle.properties supports it; others return an error.
+	BumpCode() (newCode string, err error)
 }
 
 // GradleRunner implements Runner for Android Gradle projects.
@@ -102,11 +105,31 @@ func (r GradleRunner) ArtifactGlobs(variant string) []string {
 }
 
 func (r GradleRunner) VersionRead() (string, string, error) {
+	if r.info.VersionSource == SourceKts {
+		v, err := KtsVersion(r.info.Root, r.info.VersionFile)
+		if err != nil {
+			return "", "", err
+		}
+		return "", v, nil
+	}
 	return GradleVersion(r.info.Root, r.info.VersionFile)
 }
 
 func (r GradleRunner) VersionWrite(name string) (string, error) {
+	if r.info.VersionSource == SourceKts {
+		if err := SetKtsVersion(r.info.Root, r.info.VersionFile, name); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
 	return SetGradleVersion(r.info.Root, r.info.VersionFile, name)
+}
+
+func (r GradleRunner) BumpCode() (string, error) {
+	if r.info.VersionSource == SourceKts {
+		return "", fmt.Errorf("kts versions have no numeric code; use --set")
+	}
+	return IncrementGradleCode(r.info.Root, r.info.VersionFile)
 }
 
 func (r GoRunner) Program() string { return "go" }
@@ -154,6 +177,10 @@ func (r GoRunner) VersionWrite(name string) (string, error) {
 		return "", err
 	}
 	return "", nil
+}
+
+func (r GoRunner) BumpCode() (string, error) {
+	return "", fmt.Errorf("go versions have no numeric code; use --set")
 }
 
 // SeedConfig builds the first-scan project config for info: tool-owned

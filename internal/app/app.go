@@ -298,7 +298,7 @@ func helpText() string {
   open|scan [path]      detect project, write scan cache + config
   recent                list recently opened projects
   status                tool version, project, version, data root
-  version [--set X]     show or set version (gradle.properties | VERSION file)
+  version [--set X|bump X|--code-only] show or set version
   build debug|release   gradle assemble / go build + persist log
   test [kind]           gradle tasks / go test ./...
   notes [version]       draft notes from git history
@@ -413,16 +413,36 @@ func (m *Model) doVersion(args []string) string {
 		return tui.ErrorStyle.Render("version: " + err.Error())
 	}
 	header := "releaseforge: " + version.ToolVersion + "\n"
-	if len(args) >= 2 && args[0] == "--set" {
-		next, err := r.VersionWrite(args[1])
+	setName, codeOnly := "", false
+	switch {
+	case len(args) >= 2 && (args[0] == "--set" || args[0] == "bump"):
+		setName = strings.TrimSpace(args[1])
+	case len(args) >= 1 && args[0] == "--code-only":
+		codeOnly = true
+	case len(args) > 0:
+		return tui.ErrorStyle.Render("version: usage: version [--set X | bump X | --code-only]")
+	}
+	if codeOnly {
+		next, err := r.BumpCode()
+		if err != nil {
+			return tui.ErrorStyle.Render("version: " + err.Error())
+		}
+		m.refreshProject()
+		return header + fmt.Sprintf("versionCode: %s", next)
+	}
+	if setName != "" {
+		if err := project.ValidateVersion(setName); err != nil {
+			return tui.ErrorStyle.Render("version: " + err.Error())
+		}
+		next, err := r.VersionWrite(setName)
 		if err != nil {
 			return tui.ErrorStyle.Render("version: " + err.Error())
 		}
 		m.refreshProject()
 		if next == "" {
-			return header + fmt.Sprintf("version: %s (wrote VERSION, not committed)", args[1])
+			return header + fmt.Sprintf("version: %s (wrote file, not committed)", setName)
 		}
-		return header + fmt.Sprintf("versionCode: %s\nversionName: %s", next, args[1])
+		return header + fmt.Sprintf("versionCode: %s\nversionName: %s", next, setName)
 	}
 	code, name, err := r.VersionRead()
 	if err != nil {

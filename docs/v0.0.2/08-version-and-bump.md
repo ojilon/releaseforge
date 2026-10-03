@@ -22,7 +22,12 @@ code+1); (2) `version = "…"` / `version = '…'` assignment in
 `app/build.gradle.kts`, then root `build.gradle.kts` (write = replace the
 literal, no code concept — report `code: ""`); (3) go `VERSION` file
 (existing). `Info` gains `VersionSource string` (`properties|kts|file|none`)
-so display logic stops guessing.
+so display logic stops guessing. The `Runner` interface (doc 02) gains one
+additive method, `BumpCode() (string, error)`: properties implements code+1,
+kts/go return a clear "unsupported" error. CLI and TUI call all three verbs
+(`--set`, `bump`, `--code-only`) through the Runner; `release` needs no
+further changes because `GradleRunner.VersionWrite` dispatches on
+`VersionSource` internally.
 
 New command shape (same `version` command, additive flags):
 
