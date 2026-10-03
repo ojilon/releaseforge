@@ -38,19 +38,9 @@ var installCmd = &cobra.Command{
 		var apk string
 		root, _, err := resolveDataRoot()
 		if err == nil {
-			relDir := storage.ReleasesDir(root, info.Name)
-			entries, _ := os.ReadDir(relDir)
-			// newest version dir first (lexicographic is good enough for v1)
-			best := ""
-			for _, e := range entries {
-				if e.IsDir() && strings.Contains(e.Name(), ".") || e.IsDir() {
-					if e.Name() > best {
-						best = e.Name()
-					}
-				}
-			}
+			best := newestReleaseDir(storage.ReleasesDir(root, info.Name))
 			if best != "" {
-				cand := filepath.Join(relDir, best, fmt.Sprintf("*-"+variant+".apk"))
+				cand := filepath.Join(storage.ReleasesDir(root, info.Name), best, fmt.Sprintf("*-"+variant+".apk"))
 				matches, _ := filepath.Glob(cand)
 				if len(matches) > 0 {
 					apk = matches[len(matches)-1]
@@ -81,4 +71,30 @@ var installCmd = &cobra.Command{
 
 func init() {
 	installCmd.Flags().StringVar(&installDevice, "device", "", "adb serial (default: first device)")
+}
+
+// newestReleaseDir returns the lexicographically greatest version-like
+// (name contains ".") subdirectory of relDir, falling back to the greatest
+// subdirectory of any name. Returns "" when none exists.
+func newestReleaseDir(relDir string) string {
+	entries, err := os.ReadDir(relDir)
+	if err != nil {
+		return ""
+	}
+	best, bestAny := "", ""
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if e.Name() > bestAny {
+			bestAny = e.Name()
+		}
+		if strings.Contains(e.Name(), ".") && e.Name() > best {
+			best = e.Name()
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return bestAny
 }

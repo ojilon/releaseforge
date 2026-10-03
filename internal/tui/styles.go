@@ -13,10 +13,6 @@ var (
 			Background(lipgloss.Color("0")).
 			Padding(0, 1)
 
-	StatusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")).
-			Padding(0, 1)
-
 	ErrorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("9")).
 			Bold(true)

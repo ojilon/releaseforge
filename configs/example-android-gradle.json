@@ -31,6 +31,5 @@
   "github": {
     "owner": "ojilon",
     "repo": "Conductino-Android"
-  },
-  "mirror_release_dir_in_repo": true
+  }
 }

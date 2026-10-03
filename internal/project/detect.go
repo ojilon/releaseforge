@@ -184,6 +184,15 @@ func SetVersionFile(projectRoot, file, version string) error {
 	return os.WriteFile(filepath.Join(projectRoot, file), []byte(version+"\n"), 0o644)
 }
 
+// BinaryBaseName returns the file-safe base name for built binaries.
+// It derives from the sanitized project name (set by Detect).
+func BinaryBaseName(info Info) string {
+	if strings.TrimSpace(info.Name) == "" {
+		return "app"
+	}
+	return info.Name
+}
+
 // CurrentVersion returns (code, name) for known types; generic returns ("", "", nil).
 func CurrentVersion(info Info) (code, name string, err error) {
 	switch info.Type {

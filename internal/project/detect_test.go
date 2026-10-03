@@ -88,3 +88,15 @@ func TestDetectWails(t *testing.T) {
 		t.Fatalf("got %q", info.Type)
 	}
 }
+
+func TestBinaryBaseName(t *testing.T) {
+	if got := BinaryBaseName(Info{Name: "releaseforge"}); got != "releaseforge" {
+		t.Fatalf("got %q", got)
+	}
+	if got := BinaryBaseName(Info{Name: "My App"}); got != "My App" {
+		t.Fatalf("got %q", got)
+	}
+	if got := BinaryBaseName(Info{}); got != "app" {
+		t.Fatalf("fallback got %q", got)
+	}
+}

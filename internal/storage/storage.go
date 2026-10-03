@@ -205,8 +205,8 @@ func SanitizeProjectName(name string) string {
 	if s == "" {
 		return "unnamed-project"
 	}
-	if len(s) > 64 {
-		s = s[:64]
+	if len([]rune(s)) > 64 {
+		s = string([]rune(s)[:64])
 		s = strings.Trim(s, ".- ")
 		if s == "" {
 			return "unnamed-project"

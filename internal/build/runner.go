@@ -159,8 +159,3 @@ func GradleWrapper(dir string) string {
 	}
 	return "gradle"
 }
-
-// GradleArgs builds a gradle invocation for a task list.
-func GradleArgs(tasks ...string) []string {
-	return tasks
-}

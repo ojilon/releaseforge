@@ -104,7 +104,6 @@ type ProjectConfig struct {
 	Signing                *SigningConfig   `json:"signing,omitempty"`
 	Artifacts              *ArtifactsConfig `json:"artifacts,omitempty"`
 	Github                 *GithubConfig    `json:"github,omitempty"`
-	MirrorReleaseDirInRepo bool             `json:"mirror_release_dir_in_repo,omitempty"`
 }
 
 // DefaultGlobal returns a GlobalConfig with sane defaults for a new data root.
@@ -298,7 +297,8 @@ func dataRootFromExePath(exe string) (string, bool) {
 	return filepath.Clean(abs), true
 }
 
-func writeJSON(path string, v any, perm os.FileMode) error {	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+func writeJSON(path string, v any, perm os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(v, "", "  ")

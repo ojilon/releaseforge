@@ -11,10 +11,13 @@ stabilization; no behavior changes except the bugfixes listed.
   is true for every directory (`&&` binds tighter than `||`), so the `.`
   filter and "newest" selection are broken.
 - Dead code: `notImplemented` (`cmd/root.go:83`, zero callers),
-  `logMsg/doneMsg/asyncResult/running` (`internal/app/app.go:37-71,145-158`,
-  never sent/set-true), `StatusStyle` (`internal/tui/styles.go:16`, unused),
-  `GradleArgs` (`internal/build/runner.go:163`, unused),
-  `Stream.Subscribe` (no callers), `HistoryFile` (never written).
+  `asyncResult` (`internal/app/app.go`, never referenced), `StatusStyle`
+  (`internal/tui/styles.go:16`, unused), `GradleArgs`
+  (`internal/build/runner.go:163`, unused), `Stream.Subscribe` + fan-out
+  (no callers; doc 03 re-adds subscription deliberately).
+- Kept deliberately (reserved, not dead): `logMsg`/`doneMsg`/`running` and
+  their `Update` branches (doc 03 sends them for real), `HistoryFile`
+  (doc 13 needs it for `commands.jsonl` persistence).
 - Garbled TUI help (`internal/app/app.go:298`): `show or set version (gradle
   VERSION-free: VERSION file)`.
 - Binary base name `releaseforge` hard-coded in three places: `goBinaryOut`
@@ -43,8 +46,12 @@ Truncation becomes rune-safe with the same 64 limit and same fallback.
   keep `Subscribe`? No — remove it; doc 03 re-adds a subscription design
   deliberately)
 - `internal/storage/storage.go` (rune-safe truncation)
+- `internal/storage/storage.go` (rune-safe truncation + test)
 - `internal/config/config.go` (drop field, formatting fix)
 - `cmd/test.go`, `cmd/release.go`, `internal/app/app.go` (binary-name helper)
+- `internal/project/detect.go` (new `BinaryBaseName` + test)
+- `configs/example-android-gradle.json` (drop the removed field from the example)
+- New `cmd/install_test.go` (pure dir-pick function test)
 
 ## Steps
 

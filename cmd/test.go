@@ -89,10 +89,10 @@ func init() {
 }
 
 // goBinaryOut returns the builds-dir output path for a Go build.
-func goBinaryOut(dataRoot, projectName, variant string) string {
-	base := "releaseforge"
+func goBinaryOut(dataRoot string, info project.Info, variant string) string {
+	base := project.BinaryBaseName(info)
 	if variant == "release" {
-		base = "releaseforge-release"
+		base += "-release"
 	}
-	return filepath.Join(storage.BuildsDir(dataRoot, projectName), build.GoBinaryName(base))
+	return filepath.Join(storage.BuildsDir(dataRoot, info.Name), build.GoBinaryName(base))
 }

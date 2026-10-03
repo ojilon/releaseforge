@@ -103,3 +103,19 @@ func TestProjectNameFromPath(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestSanitizeMultibyteTruncation(t *testing.T) {
+	long := ""
+	for i := 0; i < 70; i++ {
+		long += "ä"
+	}
+	got := SanitizeProjectName(long)
+	if len([]rune(got)) != 64 {
+		t.Fatalf("got %d runes", len([]rune(got)))
+	}
+	for _, r := range got {
+		if r == '�' {
+			t.Fatal("split UTF-8 sequence")
+		}
+	}
+}

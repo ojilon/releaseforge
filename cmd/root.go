@@ -79,11 +79,6 @@ func requireDataRoot() (root string, configPath string, err error) {
 	return root, configPath, nil
 }
 
-// placeholder helpers so the tree compiles before full implementation
-func notImplemented(name string) error {
-	return app.NotImplemented(name)
-}
-
 func runTUI() error {
 	root, _, err := resolveDataRoot()
 	if err != nil {

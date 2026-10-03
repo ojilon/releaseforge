@@ -67,7 +67,7 @@ Logs are streamed live and persisted under the data-root.`,
 			}
 		case "go":
 			stamp := projectVersionName(info)
-			out := goBinaryOut(root, info.Name, variant)
+			out := goBinaryOut(root, info, variant)
 			prog, bargs = "go", build.GoBuildArgs(info.Root, out, stamp, variant)
 			extra = out
 		default:

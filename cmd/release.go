@@ -202,7 +202,7 @@ func releaseGo(info project.Info, version string) error {
 		}
 	}
 
-	out := filepath.Join(verDir, build.GoBinaryName("releaseforge-"+version))
+	out := filepath.Join(verDir, build.GoBinaryName(project.BinaryBaseName(info)+"-"+version))
 	fmt.Printf("==> build release → %s\n", out)
 	logPath := rflog.LogPath(storage.LogsDir(root, info.Name), "build-release")
 	res := build.Run("go", build.GoBuildArgs(info.Root, out, version, "release"), build.Options{

@@ -131,3 +131,18 @@ func TestDataRootFromExePath(t *testing.T) {
 		t.Fatal("expected no match without bin layout")
 	}
 }
+
+func TestLoadProjectIgnoresDroppedMirrorField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	raw := `{"type":"go","name":"x","root":"/tmp/x","version":{"file":"VERSION"},"mirror_release_dir_in_repo":true}`
+	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadProject(path)
+	if err != nil {
+		t.Fatalf("old config should still load: %v", err)
+	}
+	if cfg.Name != "x" {
+		t.Fatalf("got %+v", cfg)
+	}
+}

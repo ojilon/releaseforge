@@ -46,12 +46,6 @@ type doneMsg struct {
 	err   error
 }
 
-type asyncResult struct {
-	lines []string
-	err   error
-	label string
-}
-
 // Model is the TUI root.
 type Model struct {
 	dataRoot   string
@@ -295,7 +289,7 @@ func helpText() string {
   open|scan [path]      detect project, write scan cache + config
   recent                list recently opened projects
   status                tool version, project, version, data root
-  version [--set X]     show or set version (gradle VERSION-free: VERSION file)
+  version [--set X]     show or set version (gradle.properties | VERSION file)
   build debug|release   gradle assemble / go build + persist log
   test [kind]           gradle tasks / go test ./...
   notes [version]       draft notes from git history
@@ -426,9 +420,9 @@ func (m *Model) doBuild(variant string) string {
 		if _, name, err := project.CurrentVersion(info); err == nil && name != "" {
 			stamp = name
 		}
-		out := filepath.Join(storage.BuildsDir(m.dataRoot, info.Name), build.GoBinaryName("releaseforge"))
+		out := filepath.Join(storage.BuildsDir(m.dataRoot, info.Name), build.GoBinaryName(project.BinaryBaseName(info)))
 		if variant == "release" {
-			out = filepath.Join(storage.BuildsDir(m.dataRoot, info.Name), build.GoBinaryName("releaseforge-release"))
+			out = filepath.Join(storage.BuildsDir(m.dataRoot, info.Name), build.GoBinaryName(project.BinaryBaseName(info)+"-release"))
 		}
 		prog, bargs = "go", build.GoBuildArgs(info.Root, out, stamp, variant)
 	default:
