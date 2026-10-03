@@ -232,6 +232,7 @@ func releaseGo(info project.Info, r project.Runner, version string) error {
 	res := build.Run(r.Program(), buildArgs, build.Options{
 		Dir:     info.Root,
 		LogPath: logPath,
+		Project: info.Name,
 		OnLine:  func(t string, _ bool) { fmt.Println(t) },
 	})
 	fmt.Printf("log: %s\n", res.LogPath)
@@ -265,6 +266,7 @@ func runStep(dataRoot string, info project.Info, prefix, prog string, args ...st
 	res := build.Run(prog, args, build.Options{
 		Dir:     info.Root,
 		LogPath: logPath,
+		Project: info.Name,
 		OnLine:  func(t string, _ bool) { fmt.Println(t) },
 	})
 	if !res.Success {

@@ -12,8 +12,11 @@ import (
 )
 
 var (
-	buildVariant string // debug | release
-	buildABIs    string
+	buildVariant    string // debug | release
+	buildABIs       string
+	buildStacktrace bool
+	buildInfo       bool
+	buildDebug      bool
 )
 
 var buildCmd = &cobra.Command{
@@ -58,6 +61,11 @@ Logs are streamed live and persisted under the data-root.`,
 		if err != nil {
 			return err
 		}
+		extra, err := gradleVerbosity(r, buildStacktrace, buildInfo, buildDebug)
+		if err != nil {
+			return err
+		}
+		bargs = append(bargs, extra...)
 		if _, ok := r.(project.GradleRunner); ok && strings.TrimSpace(buildABIs) != "" && verbose {
 			fmt.Printf("note: --abis %s honoured via gradle.properties aurora.abiFilters (edit file before build)\n", buildABIs)
 		}
@@ -65,6 +73,7 @@ Logs are streamed live and persisted under the data-root.`,
 		res := build.Run(r.Program(), bargs, build.Options{
 			Dir:     info.Root,
 			LogPath: logPath,
+			Project: info.Name,
 			OnLine:  func(t string, _ bool) { fmt.Println(t) },
 		})
 		fmt.Printf("log: %s\n", res.LogPath)
@@ -87,6 +96,31 @@ Logs are streamed live and persisted under the data-root.`,
 func init() {
 	buildCmd.Flags().StringVar(&buildVariant, "variant", "", "debug or release")
 	buildCmd.Flags().StringVar(&buildABIs, "abis", "", "comma-separated ABI filters (Android)")
+	buildCmd.Flags().BoolVar(&buildStacktrace, "stacktrace", false, "pass --stacktrace to Gradle (Android only)")
+	buildCmd.Flags().BoolVar(&buildInfo, "info", false, "pass --info to Gradle (Android only)")
+	buildCmd.Flags().BoolVar(&buildDebug, "debug", false, "pass --debug to Gradle (Android only)")
+}
+
+// gradleVerbosity returns --stacktrace/--info/--debug passthrough flags,
+// rejecting them for non-Gradle runners.
+func gradleVerbosity(r project.Runner, stacktrace, info, debug bool) ([]string, error) {
+	if !stacktrace && !info && !debug {
+		return nil, nil
+	}
+	if _, ok := r.(project.GradleRunner); !ok {
+		return nil, fmt.Errorf("--stacktrace/--info/--debug only apply to Gradle projects")
+	}
+	var out []string
+	if stacktrace {
+		out = append(out, "--stacktrace")
+	}
+	if info {
+		out = append(out, "--info")
+	}
+	if debug {
+		out = append(out, "--debug")
+	}
+	return out, nil
 }
 
 // printReport renders structured error items after a failure.

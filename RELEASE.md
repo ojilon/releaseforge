@@ -264,7 +264,8 @@ with notes + assets.
 | `data root not initialised` | Storage unknown here → `init`, or set `$env:RELEASEFORGE_DATA_ROOT`, or pass `--data-root`. Bare `releaseforge`/`go run .` opens the TUI, which needs storage too. |
 | `unknown command: release` inside the TUI bar | TUI has no `release` verb — run it at the PowerShell prompt. |
 | Second `release` fails on tag | Guard working. Already released → verify with `gh release view`. Need a redo → delete remote+local tag first, deliberately. |
-| Release dies in `test` | Read the newest `logs/test-*.log` tail (or the `!` lines). Fix with plain `go test` / gradle first. |
+| Release dies in `test` | Read the newest log first: `logs last` (or `logs tail -n 50 last`). Full list: `logs`. Exact file: `logs show <prefix>`. Fix with plain `go test` / gradle first. |
+| `build`/`test` need Gradle-only flags | `--stacktrace`, `--info`, `--debug` are rejected for Go projects. They land verbatim in the log's `$` header line — check there first. |
 | `gh release ...` fails but tag pushed | Publish manually per section 6b — tag + local zip is the safe state. |
 | Binary reports wrong version | Built without the `-ldflags -X` stamp (section 3b), or stale `VERSION`. Rebuild. |
 | Installer can't find payload | Put `releaseforge.exe` next to `installer.exe`, or pass `--bin`. |

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ojilon/releaseforge/internal/project"
 )
 
 func TestNewestReleaseDir(t *testing.T) {
@@ -28,5 +30,20 @@ func TestNewestReleaseDir(t *testing.T) {
 	}
 	if got := newestReleaseDir(filepath.Join(t.TempDir(), "missing")); got != "" {
 		t.Fatalf("missing dir got %q want empty", got)
+	}
+}
+
+func TestGradleVerbosity(t *testing.T) {
+	gr, _ := project.For(project.Info{Type: "android-gradle"})
+	args, err := gradleVerbosity(gr, true, false, true)
+	if err != nil || len(args) != 2 || args[0] != "--stacktrace" || args[1] != "--debug" {
+		t.Fatalf("got %v %v", args, err)
+	}
+	if args, err := gradleVerbosity(gr, false, false, false); err != nil || args != nil {
+		t.Fatalf("got %v %v", args, err)
+	}
+	gor, _ := project.For(project.Info{Type: "go"})
+	if _, err := gradleVerbosity(gor, true, false, false); err == nil {
+		t.Fatal("expected go rejection")
 	}
 }

@@ -11,7 +11,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var testKind string // unit | instrumented | all (android); go ignores kind
+var (
+	testKind       string // unit | instrumented | all (android); go ignores kind
+	testStacktrace bool
+	testInfo       bool
+	testDebug      bool
+)
 
 var testCmd = &cobra.Command{
 	Use:   "test [kind]",
@@ -46,6 +51,11 @@ Logs land under <data-root>/projects/<name>/logs.`,
 		if err != nil {
 			return err
 		}
+		extra, err := gradleVerbosity(r, testStacktrace, testInfo, testDebug)
+		if err != nil {
+			return err
+		}
+		targs = append(targs, extra...)
 		root, _, err := requireDataRoot()
 		if err != nil {
 			return err
@@ -57,6 +67,7 @@ Logs land under <data-root>/projects/<name>/logs.`,
 		res := build.Run(r.Program(), targs, build.Options{
 			Dir:     info.Root,
 			LogPath: logPath,
+			Project: info.Name,
 			OnLine:  func(t string, _ bool) { fmt.Println(t) },
 		})
 		fmt.Printf("log: %s\n", res.LogPath)
@@ -82,4 +93,7 @@ Logs land under <data-root>/projects/<name>/logs.`,
 
 func init() {
 	testCmd.Flags().StringVar(&testKind, "kind", "", "unit | instrumented | all (android only)")
+	testCmd.Flags().BoolVar(&testStacktrace, "stacktrace", false, "pass --stacktrace to Gradle (Android only)")
+	testCmd.Flags().BoolVar(&testInfo, "info", false, "pass --info to Gradle (Android only)")
+	testCmd.Flags().BoolVar(&testDebug, "debug", false, "pass --debug to Gradle (Android only)")
 }

@@ -41,6 +41,8 @@ type Options struct {
 	Env []string
 	// Timeout kills the process after the duration (0 = none).
 	Timeout time.Duration
+	// Project names the owning project for the log index (may be empty).
+	Project string
 }
 
 // Handle is a running process started by Start.
@@ -132,6 +134,7 @@ func Run(name string, args []string, opts Options) Result {
 // execute runs the process once; emit receives every output line.
 func execute(ctx context.Context, name string, args []string, opts Options, emit func(string, bool)) Result {
 	display := name + " " + strings.Join(args, " ")
+	started := time.Now().UTC().Format(time.RFC3339)
 	var stream *rflog.Stream
 	if opts.LogPath != "" {
 		s, err := rflog.New(opts.LogPath)
@@ -210,6 +213,15 @@ func execute(ctx context.Context, name string, args []string, opts Options, emit
 	if rep := ParseErrors(lines); len(rep.Items) > 0 {
 		rep.LogPath = opts.LogPath
 		res.Report = &rep
+	}
+	if opts.LogPath != "" {
+		rflog.AppendIndex(filepath.Dir(opts.LogPath), rflog.Entry{
+			Name:      filepath.Base(opts.LogPath),
+			Command:   display,
+			StartedAt: started,
+			ExitCode:  code,
+			Project:   opts.Project,
+		})
 	}
 	return res
 }
