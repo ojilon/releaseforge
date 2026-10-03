@@ -25,8 +25,10 @@ type Snapshot struct {
 	Tools      []ToolHit       `json:"tools"`
 	Frameworks []ToolHit       `json:"frameworks"`
 	Configs    []ConfigHit     `json:"configs"`
-	Version    VersionSnap     `json:"version"`
+	Version    VersionSnap    `json:"version"`
 	Hints      map[string]bool `json:"hints"`
+	Gradle     *GradleInfo    `json:"gradle,omitempty"`
+	CmakeFiles []string       `json:"cmake_files,omitempty"`
 }
 
 // GitSnapshot holds local git state.
@@ -196,6 +198,11 @@ func Scan(dir string) (Snapshot, Info, error) {
 			addTool("ndk", "ndkVersion in gradle.properties")
 		}
 	}
+
+	if info.Type == "android-gradle" {
+		snap.Gradle = ScanGradle(info.Root)
+	}
+	snap.CmakeFiles = FindCmakeFiles(info.Root)
 
 	return snap, info, nil
 }

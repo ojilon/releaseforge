@@ -1,0 +1,28 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.example.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.example.app"
+        minSdk 26
+        targetSdk 34
+        versionCode 12
+        versionName "1.2.0"
+        ndkVersion "29.0.14206865"
+
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+
+        externalNativeBuild {
+            cmake {
+                path "src/main/cpp/CMakeLists.txt"
+            }
+        }
+    }
+}

@@ -1,0 +1,6 @@
+[versions]
+agp = "8.5.2"
+kotlin = "1.9.24"
+
+[libraries]
+core = { module = "androidx.core:core-ktx", version.ref = "core" }

@@ -3,7 +3,7 @@
 - [x] 01 cleanup-and-bugfixes
 - [x] 02 runner-interface
 - [x] 07 scan-cache-and-config
-- [ ] 06 android-scan-gradle
+- [x] 06 android-scan-gradle
 - [ ] 08 version-and-bump
 - [ ] 03 async-process-and-logstream
 - [ ] 04 error-parsing

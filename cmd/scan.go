@@ -90,8 +90,21 @@ updates the recent-projects list. Re-run scan/rescan to refresh.`,
 		for _, n := range notes {
 			fmt.Printf("note: %s\n", n)
 		}
+		if scanDeep {
+			p, err := project.DeepProperties(info, root)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Deep:    %s\n", p)
+		}
 		return nil
 	},
+}
+
+var scanDeep bool
+
+func init() {
+	scanCmd.Flags().BoolVar(&scanDeep, "deep", false, "also run gradlew :app:properties (android only, spawns Gradle)")
 }
 
 // configsEqual compares two project configs by their canonical JSON.
