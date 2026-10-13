@@ -134,6 +134,9 @@ func printReport(rep *build.Report) {
 	if rep == nil {
 		return
 	}
+	if strings.TrimSpace(rep.Summary) != "" {
+		fmt.Println("  " + rep.Summary)
+	}
 	for _, l := range rep.Format() {
 		fmt.Println(l)
 	}

@@ -54,6 +54,8 @@ func init() {
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(releaseCmd)
 	rootCmd.AddCommand(installCmd)
+	rootCmd.AddCommand(signCmd)
+	rootCmd.AddCommand(devicesCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(statusCmd)

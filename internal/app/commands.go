@@ -85,12 +85,32 @@ func (m *Model) exec(line string) (bool, tea.Cmd) {
 		return false, c
 	case "logs":
 		m.appendLine(m.doLogs(args))
+	case "sign":
+		m.appendLine(m.doSign(args))
+	case "install":
+		m.appendLine(m.doInstall(args))
+	case "devices":
+		m.appendLine(m.doDevices())
+	case "git":
+		m.appendLine(m.doGit(args))
+	case "ls", "dir":
+		m.appendLine(m.doLs(args))
+	case "pwd":
+		m.appendLine(m.doPwd())
+	case "cat":
+		m.appendLine(m.doCat(args))
+	case "bat", "run":
+		s, c := m.doBat(args)
+		m.appendLine(s)
+		return false, c
 	case "notes":
 		ver := ""
 		if len(args) > 0 {
 			ver = args[0]
 		}
 		m.appendLine(m.doNotes(ver))
+	case "theme":
+		tui.SetTheme(args[0])
 	default:
 		m.appendLine(tui.ErrorStyle.Render("unknown command: " + verb + " (try `help`)"))
 	}
@@ -105,10 +125,16 @@ func helpText() string {
   version [--set X|bump X|--code-only] show or set version
   build debug|release   gradle assemble / go build + persist log
   test [kind]           gradle tasks / go test ./...
+  sign [apk] [--alias X]  sign APK (keystore in data-root/signing)
+  install [debug|release] install APK via adb, no copying
+  devices               list connected adb devices
+  git log|status|diff|tags  git state while analysing
+  ls|dir [path] · pwd · cat <file>  browse folders
+  bat <script> [args]   run .bat/.ps1/.sh/.py with live logs
   notes [version]       draft notes from git history
   logs                  list recent persisted logs
   clear                 clear viewport
-  esc cancels a running build/test · ctrl+l clears too
+  esc cancels a running build/test/script · ctrl+l clears too
   quit                  exit`
 }
 

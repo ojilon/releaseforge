@@ -63,9 +63,13 @@ type Model struct {
 	// Presentation state.
 	phase  string // idle|building|testing|failed|ok
 	width  int
+	height int
 	branch string
 	dirty  bool
 	spark  string
+
+	// dash is the right-side scan dashboard text (empty = hidden).
+	dash string
 
 	// Active async run (nil when idle).
 	handle     *build.Handle
@@ -87,6 +91,7 @@ func New(dataRoot, projectDir string) Model {
 	ti.Focus()
 	ti.CharLimit = 512
 	ti.Prompt = "> "
+	tui.PaintInput(&ti) // input colors come from tui/theme.go Current
 
 	ring := rflog.NewRing(ringCap)
 	hist := history.LoadCommands(dataRoot)
@@ -98,12 +103,14 @@ func New(dataRoot, projectDir string) Model {
 	return m
 }
 
-// refreshProject re-detects the project and updates name/version/branch.
+// refreshProject re-detects the project and updates name/version/branch
+// plus the right-side dashboard.
 func (m *Model) refreshProject() {
 	info, err := project.Detect(m.projectDir)
 	if err != nil {
 		m.info = nil
 		m.version = ""
+		m.branch, m.dirty, m.spark, m.dash = "", false, "", ""
 		return
 	}
 	m.info = &info
@@ -113,9 +120,7 @@ func (m *Model) refreshProject() {
 		} else {
 			m.version = "v" + vsnap.Name
 		}
-		return
-	}
-	if code, name, err := project.CurrentVersion(info); err == nil && name != "" {
+	} else if code, name, err := project.CurrentVersion(info); err == nil && name != "" {
 		if code != "" {
 			m.version = fmt.Sprintf("v%s (%s)", name, code)
 		} else {
@@ -137,6 +142,33 @@ func (m *Model) refreshProject() {
 			m.spark = tui.Sparkline(tui.BucketCommits(dates, time.Now()))
 		}
 	}
+	m.dash = m.buildDash()
+	m.layout()
+}
+
+// layout fits the log viewport into the window, reserving space for
+// borders, header, input and (on wide screens) the dashboard.
+// Call after width/height/dash change.
+func (m *Model) layout() {
+	if !m.ready {
+		return
+	}
+	headerH := 4 // bordered header + gap
+	footerH := 2 // hints line + gap
+	inputH := 3  // left-bordered input + gap
+	h := m.height - headerH - footerH - inputH - 2
+	if h < 5 {
+		h = 5
+	}
+	w := m.width - 2 // thin log border
+	if m.dashVisible() {
+		w -= dashWidth + 3 // dashboard + gap
+	}
+	if w < 20 {
+		w = 20
+	}
+	m.viewport.Width = w - 2  // inner border chrome
+	m.viewport.Height = h - 2
 }
 
 // projectName is the display name for header and metrics.

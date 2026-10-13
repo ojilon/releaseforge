@@ -1,4 +1,8 @@
-// Package tui holds Lip Gloss styles, shared Bubbles components and layout helpers.
+// Package tui holds the theme, Lip Gloss styles and layout helpers.
+//
+// Where things live:
+//   theme.go  - Theme struct + Current colors (EDIT COLORS HERE)
+//   styles.go - styles built FROM the theme (edit rarely)
 package tui
 
 import (
@@ -8,25 +12,99 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Styles, colors, and layout constants live here so views stay declarative.
+// Styles below are built from Current theme in refreshStyles.
+// Do not hardcode colors here — change theme.go instead.
 var (
+	HeaderStyle lipgloss.Style
+	ErrorStyle  lipgloss.Style
+	BarStyle    lipgloss.Style
+	HelpStyle   lipgloss.Style
+
+	// LogBoxStyle is the thin border around the log pane.
+	LogBoxStyle lipgloss.Style
+	// DashBoxStyle is the thin border around the right-side dashboard.
+	DashBoxStyle lipgloss.Style
+
+	PillOK   lipgloss.Style
+	PillRun  lipgloss.Style
+	PillFail lipgloss.Style
+	PillIdle lipgloss.Style
+
+	RuleStyle   lipgloss.Style
+	PanelBorder lipgloss.Style
+)
+
+// Color tokens kept for callers that need a raw color.
+// They mirror the current theme after refreshStyles runs.
+var (
+	ColorOK     lipgloss.Color
+	ColorRun    lipgloss.Color
+	ColorFail   lipgloss.Color
+	ColorDim    lipgloss.Color
+	ColorBorder lipgloss.Color
+)
+
+func init() {
+	refreshStyles()
+}
+
+// refreshStyles rebuilds every style from Current.
+// Called once at startup and on every SetTheme.
+func refreshStyles() {
 	HeaderStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("12")).
-			Background(lipgloss.Color("0")).
-			Padding(0, 1)
+		Bold(true).
+		Foreground(Current.HeaderFg).
+		Background(Current.HeaderBg).
+		Padding(0, 1)
 
 	ErrorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("9")).
-			Bold(true)
+		Foreground(Current.Fail).
+		Bold(true)
 
+	// BarStyle paints the input box line (see view.go: bar).
+	// Only a thick LEFT border in accent color — the rest stays borderless
+	// so the color stays small and never overwhelms the text.
 	BarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("11")).
-			Padding(0, 1)
+		Foreground(Current.Text).
+		Border(lipgloss.ThickBorder(), false, false, false, true).
+		BorderForeground(Current.Accent).
+		Padding(0, 1)
+
+	// LogBoxStyle is the thin border around the logs pane.
+	LogBoxStyle = lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(Current.Border)
+
+	// DashBoxStyle is the thin border around the scan dashboard.
+	DashBoxStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(Current.Border).
+		Padding(0, 1)
 
 	HelpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8"))
-)
+		Foreground(Current.Dim)
+
+	ColorOK = Current.OK
+	ColorRun = Current.Busy
+	ColorFail = Current.Fail
+	ColorDim = Current.Dim
+	ColorBorder = Current.Border
+
+	PillOK = lipgloss.NewStyle().Bold(true).Foreground(Current.OK)
+	PillRun = lipgloss.NewStyle().Bold(true).Foreground(Current.Busy)
+	PillFail = lipgloss.NewStyle().Bold(true).Foreground(Current.Fail)
+	PillIdle = lipgloss.NewStyle().Bold(true).Foreground(Current.Dim)
+
+	RuleStyle = lipgloss.NewStyle().Foreground(Current.Dim)
+
+	// PanelBorder is the rounded box around the header.
+	// Overall app background comes from your terminal;
+	// this border + header background is what you actually see.
+	PanelBorder = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(Current.Border).
+		Padding(0, 1)
+}
 
 // RenderHeader builds the status header line.
 func RenderHeader(toolVersion, project, version, status string) string {
@@ -45,29 +123,6 @@ func RenderHeader(toolVersion, project, version, status string) string {
 	}
 	return HeaderStyle.Render(line)
 }
-
-// Color tokens: the single place for panel colors.
-const (
-	ColorOK     = lipgloss.Color("10")
-	ColorRun    = lipgloss.Color("11")
-	ColorFail   = lipgloss.Color("9")
-	ColorDim    = lipgloss.Color("8")
-	ColorBorder = lipgloss.Color("8")
-)
-
-var (
-	PillOK   = lipgloss.NewStyle().Bold(true).Foreground(ColorOK)
-	PillRun  = lipgloss.NewStyle().Bold(true).Foreground(ColorRun)
-	PillFail = lipgloss.NewStyle().Bold(true).Foreground(ColorFail)
-	PillIdle = lipgloss.NewStyle().Bold(true).Foreground(ColorDim)
-
-	RuleStyle = lipgloss.NewStyle().Foreground(ColorDim)
-
-	PanelBorder = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorBorder).
-			Padding(0, 1)
-)
 
 // Pill renders a state pill for a phase (idle, scanning, building, testing,
 // failed, ok).
@@ -97,6 +152,28 @@ func Rule(width int) string {
 }
 
 var sparkBlocks = []rune(" ▁▂▃▄▅▆▇█")
+
+// RenderReport formats structured build error lines cleanly:
+// summary in fail color, error lines normal, hint: lines dimmed.
+func RenderReport(summary string, lines []string) string {
+	var b strings.Builder
+	if strings.TrimSpace(summary) != "" {
+		b.WriteString(ErrorStyle.Render("✗ " + strings.TrimSpace(summary)))
+		b.WriteString("\n")
+	}
+	for _, l := range lines {
+		t := strings.TrimRight(l, "\n")
+		if strings.Contains(t, "hint:") {
+			idx := strings.Index(t, "hint:")
+			b.WriteString(t[:idx])
+			b.WriteString(HelpStyle.Render(t[idx:]))
+		} else {
+			b.WriteString(t)
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
 
 // Sparkline renders 14 daily commit counts as bars. All-zero yields "" so
 // callers can hide the line. Longer inputs use the last 14.

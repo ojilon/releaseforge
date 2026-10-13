@@ -3,11 +3,14 @@ package app
 import (
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/ojilon/releaseforge/internal/tui"
 	"github.com/ojilon/releaseforge/internal/version"
 )
 
-// View draws the whole screen: header, log pane, input bar, footer.
+// View draws the whole screen: header, log pane (+dashboard), input, footer.
+// Fonts come from your terminal — the app cannot change them;
+// theme colors live in internal/tui/theme.go.
 func (m Model) View() string {
 	if !m.ready {
 		return tui.RenderHeader(version.ToolVersion, m.projectName(), m.version, m.status) + "\n" + m.welcome()
@@ -21,7 +24,15 @@ func (m Model) View() string {
 	top := tui.PanelBorder.Render(
 		tui.RenderHeader(version.ToolVersion, m.projectName(), m.version, m.status) +
 			" " + tui.Pill(m.phase) + "\n" + m.contextLine())
-	return top + "\n" + m.viewport.View() + "\n" + bar + "\n" + m.footer()
+
+	logs := tui.LogBoxStyle.Render(m.viewport.View())
+	middle := logs
+	if m.dashVisible() {
+		// Fixed right panel; logs take the rest (sized in layout).
+		dash := tui.DashBoxStyle.Width(dashWidth).Render(m.dashBox())
+		middle = lipgloss.JoinHorizontal(lipgloss.Top, logs, " ", dash)
+	}
+	return top + "\n" + middle + "\n" + bar + "\n" + m.footer()
 }
 
 // contextLine renders branch, dirtiness, and the commit sparkline.
@@ -49,7 +60,7 @@ func (m *Model) footer() string {
 	case "failed":
 		return tui.HelpStyle.Render("logs last to inspect · help · quit")
 	default:
-		return tui.HelpStyle.Render("help · status · scan [path] · recent · version · build · test · notes · logs · quit")
+		return tui.HelpStyle.Render("help · status · scan · build · test · sign · install · git · ls · bat · logs · quit")
 	}
 }
 

@@ -60,20 +60,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // onResize creates the log pane on first size, then keeps it fitted.
 func (m *Model) onResize(msg tea.WindowSizeMsg) {
-	headerH := 3
-	footerH := 3
 	if !m.ready {
-		m.viewport = viewport.New(msg.Width, msg.Height-headerH-footerH)
+		m.viewport = viewport.New(msg.Width, msg.Height)
 		m.viewport.MouseWheelEnabled = true
 		m.viewport.SetContent(strings.Join(m.ring.Snapshot(), "\n"))
 		m.viewport.GotoBottom()
 		m.ready = true
-	} else {
-		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - headerH - footerH
 	}
 	m.width = msg.Width
-	m.input.Width = msg.Width - 4
+	m.height = msg.Height
+	m.input.Width = msg.Width - 6 // prompt + left border + padding
+	m.layout()
 }
 
 // onDone records metrics and prints the final ok/fail line.
@@ -93,8 +90,9 @@ func (m *Model) onDone(msg doneMsg) {
 		m.pendingRun.kind = ""
 	}
 	m.status = msg.label
-	for _, l := range msg.report {
-		m.appendLine(l)
+	if len(msg.report) > 0 {
+		// Clean Gradle errors: summary in fail-red, hint: lines dimmed.
+		m.appendLine(tui.RenderReport(msg.summary, msg.report))
 	}
 	if msg.err != nil {
 		m.appendLine(tui.ErrorStyle.Render("✗ " + msg.label + ": " + msg.err.Error()))

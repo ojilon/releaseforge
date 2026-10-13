@@ -17,9 +17,10 @@ type linesMsg struct {
 
 // doneMsg marks completion of an async command.
 type doneMsg struct {
-	label  string
-	err    error
-	report []string
+	label   string
+	err     error
+	report  []string
+	summary string
 }
 
 // Run starts the interactive TUI. The data root must be initialised
@@ -73,10 +74,12 @@ func finishRun(h *build.Handle, okL, failL string) tea.Msg {
 		return doneMsg{label: okL}
 	}
 	var rep []string
+	summary := ""
 	if res.Report != nil {
 		rep = res.Report.Format()
+		summary = res.Report.Summary
 	}
-	return doneMsg{label: failL, err: firstError(res), report: rep}
+	return doneMsg{label: failL, err: firstError(res), report: rep, summary: summary}
 }
 
 // firstError summarizes a failed Result for doneMsg.
