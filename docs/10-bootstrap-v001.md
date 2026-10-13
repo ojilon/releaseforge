@@ -139,7 +139,7 @@ remain available.
 ```bash
 releaseforge test             # go test ./...  (log under projects/releaseforge/logs/)
 releaseforge build            # go build + version stamp → projects/releaseforge/builds/releaseforge.exe
-releaseforge build release    # -trimpath, stripped symbols → builds/releaseforge-release.exe
+releaseforge build release   [version] # -trimpath, stripped symbols → builds/releaseforge-release.exe
 releaseforge logs             # newest-first persisted logs
 ```
 
