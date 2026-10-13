@@ -13,10 +13,13 @@ import (
 	"time"
 )
 
-// doBuild starts an async build (debug|release). Returns a status line
-// plus a command that streams output back into Update.
-func (m *Model) doBuild(variant string) (string, tea.Cmd) {
+// doBuild starts an async build (debug|release [version]). Returns a status
+// line plus a command that streams output back into Update.
+// With a version (build release 0.0.4) it writes the version file first
+// (same as version --set: file only, never committed) so the stamp uses it.
+func (m *Model) doBuild(variant, setVer string) (string, tea.Cmd) {
 	variant = strings.ToLower(strings.TrimSpace(variant))
+	setVer = strings.TrimSpace(setVer)
 	info, err := project.Detect(m.projectDir)
 	if err != nil {
 		return tui.ErrorStyle.Render("build: " + err.Error()), nil
@@ -27,6 +30,14 @@ func (m *Model) doBuild(variant string) (string, tea.Cmd) {
 	}
 	if m.handle != nil {
 		return "a build/test is already running (esc cancels)", nil
+	}
+	if setVer != "" {
+		if err := project.ValidateVersion(setVer); err != nil {
+			return tui.ErrorStyle.Render("build: " + err.Error()), nil
+		}
+		if _, err := r.VersionWrite(setVer); err != nil {
+			return tui.ErrorStyle.Render("build: version: " + err.Error()), nil
+		}
 	}
 	_ = storage.EnsureProjectLayout(m.dataRoot, info.Name)
 	out := r.BuildOutput(m.dataRoot, variant)
@@ -47,7 +58,11 @@ func (m *Model) doBuild(variant string) (string, tea.Cmd) {
 	if out != "" {
 		extra = " → " + out
 	}
-	return fmt.Sprintf("started build %s%s (log %s, esc cancels)", variant, extra, logPath), m.waitLine()
+	verNote := ""
+	if setVer != "" {
+		verNote = " (version " + setVer + ")"
+	}
+	return fmt.Sprintf("started build %s%s%s (log %s, esc cancels)", variant, verNote, extra, logPath), m.waitLine()
 }
 
 // doTest starts an async test run. Same pattern as doBuild.

@@ -72,7 +72,11 @@ func (m *Model) exec(line string) (bool, tea.Cmd) {
 		if len(args) > 0 {
 			variant = args[0]
 		}
-		s, c := m.doBuild(variant)
+		setVer := ""
+		if len(args) > 1 {
+			setVer = args[1]
+		}
+		s, c := m.doBuild(variant, setVer)
 		m.appendLine(s)
 		return false, c
 	case "test":
@@ -123,7 +127,7 @@ func helpText() string {
   recent                list recently opened projects
   status                tool version, project, version, data root
   version [--set X|bump X|--code-only] show or set version
-  build debug|release   gradle assemble / go build + persist log
+  build debug|release [version]  gradle assemble / go build, optional version set first
   test [kind]           gradle tasks / go test ./...
   sign [apk] [--alias X]  sign APK (keystore in data-root/signing)
   install [debug|release] install APK via adb, no copying

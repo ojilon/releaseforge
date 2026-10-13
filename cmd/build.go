@@ -22,7 +22,7 @@ var (
 )
 
 var buildCmd = &cobra.Command{
-	Use:   "build [variant]",
+	Use:   "build [variant] [version]",
 	Short: "Build project with live logs persisted under the data-root",
 	Long: `Android Gradle:
   debug   → assembleDebug
@@ -32,8 +32,13 @@ Go:
   debug   → go build with version stamp into builds/
   release → go build -trimpath with stripped symbols into builds/
 
+With a version (build release 0.0.4) the version is written first
+(same as version --set: file only, never committed), so the build
+stamp uses it. Without it, the current version file is used.
+Only release tags/publishes; build never tags.
+
 Logs are streamed live and persisted under the data-root.`,
-	Args: cobra.MaximumNArgs(1),
+	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		variant := "debug"
 		if len(args) > 0 {
@@ -43,6 +48,10 @@ Logs are streamed live and persisted under the data-root.`,
 			variant = buildVariant
 		}
 		variant = strings.ToLower(strings.TrimSpace(variant))
+		setVer := ""
+		if len(args) > 1 {
+			setVer = strings.TrimSpace(args[1])
+		}
 		info, err := project.Detect(projectDir)
 		if err != nil {
 			return err
@@ -50,6 +59,15 @@ Logs are streamed live and persisted under the data-root.`,
 		r, err := project.For(info)
 		if err != nil {
 			return fmt.Errorf("build: %w", err)
+		}
+		if setVer != "" {
+			if err := project.ValidateVersion(setVer); err != nil {
+				return fmt.Errorf("build: %w", err)
+			}
+			if _, err := r.VersionWrite(setVer); err != nil {
+				return fmt.Errorf("build: version: %w", err)
+			}
+			fmt.Printf("version: %s\n", setVer)
 		}
 		root, _, err := requireDataRoot()
 		if err != nil {
