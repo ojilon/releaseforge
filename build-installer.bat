@@ -35,8 +35,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo ==^> build installer.exe
-go build -o dist\installer.exe ./installer
+echo ==^> build installer.exe ^(stamped %VER%^)
+go build -ldflags "-X github.com/ojilon/releaseforge/internal/version.ToolVersion=%VER%" -o dist\installer.exe ./installer
 if errorlevel 1 (
   echo ERROR: installer build failed.
   exit /b 1

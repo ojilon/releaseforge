@@ -6,11 +6,12 @@
 // creating the storage tree and seed files. Re-runs update binaries and
 // top up missing structure without touching existing projects/history.
 //
-// Build order:
+// Build order (stamp both so --version/install.json agree):
 //
-//	go build -o releaseforge.exe .
-//	go build -o installer.exe ./installer
+//	go build -ldflags "-X github.com/ojilon/releaseforge/internal/version.ToolVersion=<ver>" -o releaseforge.exe .
+//	go build -ldflags "-X github.com/ojilon/releaseforge/internal/version.ToolVersion=<ver>" -o installer.exe ./installer
 //	# put both in one folder (dist/) and run installer.exe from anywhere.
+//	# Or run build-installer.bat <ver> at the repo root.
 package main
 
 import (

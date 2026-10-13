@@ -279,11 +279,13 @@ func releaseGo(info project.Info, r project.Runner, version string) error {
 
 	// Installer payload (same build as build-installer.bat step 2):
 	// go build ./installer into the version dir so the zip + GitHub
-	// release carry it alongside the binary.
+	// release carry it alongside the binary. Stamped with the version
+	// so install.json and the "installed releaseforge X" line agree.
 	installerOut := filepath.Join(verDir, build.GoBinaryName("installer-"+version))
 	fmt.Printf("==> build installer → %s\n", installerOut)
+	installerStamp := fmt.Sprintf("-X %s/internal/version.ToolVersion=%s", build.ModulePath(info.Root), version)
 	installerLog := rflog.LogPath(storage.LogsDir(root, info.Name), "build-installer")
-	ires := build.Run("go", []string{"build", "-o", installerOut, "./installer"}, build.Options{
+	ires := build.Run("go", []string{"build", "-ldflags", installerStamp, "-o", installerOut, "./installer"}, build.Options{
 		Dir:     info.Root,
 		LogPath: installerLog,
 		Project: info.Name,
@@ -495,7 +497,7 @@ func dryRunPlan(info project.Info, r project.Runner, version, dataRoot string) (
 		}
 		fmt.Fprintf(&b, "  build release: %s %s\n", r.Program(), strings.Join(buildArgs, " "))
 		installerOut := filepath.Join(verDir, build.GoBinaryName("installer-"+version))
-		fmt.Fprintf(&b, "  build installer: go build -o %s ./installer\n", installerOut)
+		fmt.Fprintf(&b, "  build installer: go build -ldflags \"-X <module>/internal/version.ToolVersion=%s\" -o %s ./installer\n", version, installerOut)
 		notesPath := filepath.Join(verDir, "notes.md")
 		zipPath := filepath.Join(verDir, info.Name+"-"+version+".zip")
 		fmt.Fprintf(&b, "  notes: %s\n", notesPath)
