@@ -44,9 +44,10 @@ Go (e.g. ReleaseForge itself):
   1. write VERSION file (no commit — commit manually)
   2. go test ./... (unless --skip-tests)
   3. go build -trimpath with version stamp into releases/<version>/
-  4. notes from git history
-  5. zip binary
-  6. tag v<version>, push, gh release create
+  4. go build ./installer into releases/<version>/ (same as build-installer.bat)
+  5. notes from git history
+  6. zip binary + installer + notes
+  7. tag v<version>, push, gh release create
 
 Without the gh CLI, release stops after the local tag + zip
 and reports the artifact paths (exit 0). With --dry-run, print the full
@@ -276,6 +277,26 @@ func releaseGo(info project.Info, r project.Runner, version string) error {
 	}
 	fmt.Printf("binary: %s\n", out)
 
+	// Installer payload (same build as build-installer.bat step 2):
+	// go build ./installer into the version dir so the zip + GitHub
+	// release carry it alongside the binary.
+	installerOut := filepath.Join(verDir, build.GoBinaryName("installer-"+version))
+	fmt.Printf("==> build installer → %s\n", installerOut)
+	installerLog := rflog.LogPath(storage.LogsDir(root, info.Name), "build-installer")
+	ires := build.Run("go", []string{"build", "-o", installerOut, "./installer"}, build.Options{
+		Dir:     info.Root,
+		LogPath: installerLog,
+		Project: info.Name,
+		OnLine:  func(t string, _ bool) { fmt.Println(t) },
+	})
+	fmt.Printf("log: %s\n", ires.LogPath)
+	if !ires.Success {
+		for _, e := range ires.Errors {
+			fmt.Printf("  ! %s\n", e)
+		}
+		return fmt.Errorf("build installer failed (exit %d)", ires.ExitCode)
+	}
+
 	notesPath, err := writeNotes(info.Root, verDir, info.Name, version, releasePre)
 	if err != nil {
 		return err
@@ -283,12 +304,12 @@ func releaseGo(info project.Info, r project.Runner, version string) error {
 	fmt.Printf("notes: %s\n", notesPath)
 
 	zipPath := filepath.Join(verDir, fmt.Sprintf("%s-%s.zip", info.Name, version))
-	if err := zipFiles(zipPath, []string{out, notesPath}); err != nil {
+	if err := zipFiles(zipPath, []string{out, installerOut, notesPath}); err != nil {
 		return fmt.Errorf("zip: %w", err)
 	}
 	fmt.Printf("zip: %s\n", zipPath)
 
-	return publishTagAndRelease(info.Root, version, notesPath, []string{out, zipPath}, verDir)
+	return publishTagAndRelease(info.Root, version, notesPath, []string{out, installerOut, zipPath}, verDir)
 }
 
 // runStep executes a build/test step with live output + persisted log.
@@ -473,13 +494,15 @@ func dryRunPlan(info project.Info, r project.Runner, version, dataRoot string) (
 			return "", err
 		}
 		fmt.Fprintf(&b, "  build release: %s %s\n", r.Program(), strings.Join(buildArgs, " "))
+		installerOut := filepath.Join(verDir, build.GoBinaryName("installer-"+version))
+		fmt.Fprintf(&b, "  build installer: go build -o %s ./installer\n", installerOut)
 		notesPath := filepath.Join(verDir, "notes.md")
 		zipPath := filepath.Join(verDir, info.Name+"-"+version+".zip")
 		fmt.Fprintf(&b, "  notes: %s\n", notesPath)
-		fmt.Fprintf(&b, "  zip: %s (+ notes.md)\n", zipPath)
+		fmt.Fprintf(&b, "  zip: %s (+ installer + notes.md)\n", zipPath)
 		fmt.Fprintf(&b, "  tag: %s\n", tag)
-		fmt.Fprintf(&b, "  publish: gh release create %s --notes-file %s %s %s%s\n",
-			tag, notesPath, out, zipPath, preFlag())
+		fmt.Fprintf(&b, "  publish: gh release create %s --notes-file %s %s %s %s%s\n",
+			tag, notesPath, out, installerOut, zipPath, preFlag())
 	}
 	if git.TagExists(info.Root, tag) {
 		fmt.Fprintf(&b, "  would abort: tag %s already exists\n", tag)
