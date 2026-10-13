@@ -57,6 +57,42 @@ This sweep fixes that over ~8 weeks without breaking daily use.
 | 34 | `34-testing-strategy.md` | Go tests, hardware acceptance |
 | 35 | `35-eight-week-plan.md` | Week-by-week sweep schedule |
 
+## Wave 2 (added on request — depth + missing areas)
+
+| # | File | What you get |
+|---|------|--------------|
+| 36 | `36-adb-devices-deep-dive.md` | Device states, guarded install |
+| 37 | `37-emulator-automation.md` | AVD create/boot/test |
+| 38 | `38-logcat-viewer.md` | Filtered logcat + crash jump |
+| 39 | `39-install-run-ux.md` | Manifest-driven install/run |
+| 40 | `40-tui-state-machine.md` | Explicit phase FSM |
+| 41 | `41-focus-routing-mouse-scroll.md` | Single-consumer focus, scroll |
+| 42 | `42-huh-forms-wizards.md` | Shared forms package |
+| 43 | `43-glamour-markdown.md` | Styled notes/help |
+| 44 | `44-fuzzy-finder-palette.md` | ctrl+p palette |
+| 45 | `45-windows-terminal-quirks.md` | coninput/pwsh/ANSI/size |
+| 46 | `46-build-release-dashboards.md` | Build phases + release checklist |
+| 47 | `47-doctor-checks.md` | Full tool matrix |
+| 48 | `48-jdk-gradle-tuning.md` | Daemon/memory/cache |
+| 49 | `49-aab-vs-apk-splits.md` | Bundles + ABI splits |
+| 50 | `50-r8-proguard-shrinking.md` | Rules + mapping archive |
+| 51 | `51-installer.md` | Upgrade + smoke test |
+| 52 | `52-play-publish.md` | Tracks + rollout gates |
+| 53 | `53-python-support.md` | pyproject/venv/tasks |
+| 54 | `54-node-frontend-support.md` | npm/pnpm + frozen lock |
+| 55 | `55-rust-cargo-support.md` | Toolchain + audit |
+| 56 | `56-cmake-presets-ninja-cache.md` | Presets + Ninja + ccache |
+| 57 | `57-changelog-grouping.md` | Conventional grouping spec |
+| 58 | `58-git-hooks-templates.md` | Opt-in hooks + template |
+| 59 | `59-config-schema-migration.md` | Versioned config |
+| 60 | `60-dataroot-backup-restore.md` | Backup/restore |
+| 61 | `61-plugin-new-project-types.md` | Plugin registry |
+| 62 | `62-sbom-provenance-licenses.md` | SBOM + provenance |
+| 63 | `63-crash-telemetry.md` | Opt-in, local-first |
+| 64 | `64-troubleshooting-playbook.md` | Error → fix catalog |
+| 65 | `65-glossary-faq.md` | Terms + FAQ |
+| 66 | `66-sweep-retro-template.md` | Weekly + final retro |
+
 ## The 3 horizons
 
 - **Now (weeks 1–4):** TUI refactor, scan hardening, dashboards (test/diff),
