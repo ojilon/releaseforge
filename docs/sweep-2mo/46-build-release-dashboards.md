@@ -5,6 +5,10 @@
 Build (`4`) + a Release overview complete the `07` shell: live progress,
 artifacts, and publish gates — not just streamed text.
 
+First step DONE: `dashboard.go:buildDash` (scan panel: version/branch/git/
+tools at `width >= 100`) + failing builds pin `RenderReport` errors above
+the tail (`update.go:onDone`). Full windows below still open.
+
 ## Build window (`4`)
 
 - Header: task + elapsed + progress (Gradle `--console=plain` phase parse:

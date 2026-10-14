@@ -4,6 +4,10 @@
 
 `scripts/package.py` + `zip_release.py` reference; Go port writes under
 data-root `releases/<version>/` with config `appName`; notes in zips.
+Go releases now also build + zip `installer-<version>.exe`
+(`cmd/release.go:releaseGo`; same build as `build-installer.bat` step 2).
+Lane-C artifacts: `build-installer.bat` → `dist/releaseforge.exe` +
+`dist/installer.exe` + `dist/releaseforge-<version>.zip`.
 
 ## Target layout (data-root, canonical)
 
@@ -47,6 +51,6 @@ sha := sha256.SumOf(files...); write("checksums.sha256", sha)
 ## Acceptance
 
 ```powershell
-releaseforge release --dry-run --version 9.9.9
+releaseforge release 9.9.9 --dry-run  # version is positional
 # lists exact files above; rerun → identical sha256
 ```

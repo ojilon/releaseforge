@@ -3,7 +3,9 @@
 ## Current state
 
 `internal/build/errors.go` (+`errors_test.go`): regexes for Gradle/CMake/NDK
-+ JUnit summaries → `Report.Format()` shown in `doneMsg`.
++ JUnit summaries → `Report{Items,Summary}`. TUI shows summary (fail-red) +
+items + dimmed `hint:` lines (`tui.RenderReport`, `update.go:onDone`);
+CLI prints summary + items (`cmd/build.go:printReport`, `release.go:runStep`).
 
 ## Corpus-driven plan
 

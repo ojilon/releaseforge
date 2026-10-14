@@ -4,7 +4,8 @@
 
 `internal/log/` (`Ring` cap 2000, `LogPath/List/Newest/Resolve/Tail/Head`,
 index), `internal/metrics/` (`Append`, `LastBuildLine` in status).
-`app.go:211` records build/test outcome + duration.
+`update.go:onDone` records build/test outcome + duration (script runs count
+as `kind="script"`); failures render via `tui.RenderReport`.
 
 ## Targets
 

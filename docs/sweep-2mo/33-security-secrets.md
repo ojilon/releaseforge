@@ -2,9 +2,12 @@
 
 ## Non-negotiables (already partly enforced — keep)
 
-1. Keystore passwords: prompt (huh) or `RF_KEYSTORE_PASS` env, session-only.
-   NEVER `config.json`, NEVER `.releaseforge.json` seed, NEVER logs
-   (see `looksSecret` in `scan.go:386`, scrub in `27`).
+1. Keystore passwords: `RF_KEYSTORE_PASS` env (session-only) or prompt;
+   NEVER `signing.json`, NEVER `config.json`, NEVER `.releaseforge.json`
+   seed, NEVER logs (see `looksSecret` in `scan.go`, scrub in `27`).
+   Keystore lives in `<data-root>/signing/<project>/` (outside the repo);
+   TUI signs via `SignApkCapture` (combined output, no `pass:` leak —
+   apksigner prints no secret).
 2. `git` safe.directory + ssh verification for automation (`10` actions log
    actor + timestamp).
 3. `gh` token via `gh auth` (env `GH_TOKEN`), never stored by us.

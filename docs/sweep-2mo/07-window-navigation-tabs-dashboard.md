@@ -2,8 +2,11 @@
 
 ## Current state
 
-Single viewport + command bar (`docs/04-tui-design.md` — tabs explicitly
-"future, not built"). `View:288` renders header/viewport/bar/footer.
+Single viewport + command bar + first dashboard panel (`docs/04-tui-design.md`
+— tabs explicitly "future, not built"). `dashboard.go:buildDash` renders
+name/type/version/branch/git head/tag/tools from scan cache; `view.go:View`
+shows it right of the logs at `width >= 100` (`dashVisible`), hidden on
+narrow screens. No tab strip yet.
 
 ## Target — 6 windows, `1..6` + `tab`
 

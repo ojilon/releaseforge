@@ -2,9 +2,12 @@
 
 ## Current state
 
-`app.go:72 phase string` (`idle|building|testing|failed|ok`), set inline in
-`doBuild/doTest/doneMsg`. No transition table; `footer()` branches on it.
-Races: `esc` cancel vs `doneMsg` arrival; double-run guarded by `handle != nil`.
+`model.go` `phase string` (`idle|building|testing|failed|ok`), set in
+`jobs.go:doBuild/doTest`, `scripts.go:startScript` (scripts reuse
+`building`), `update.go:onDone`. No transition table; `view.go:footer()`
+branches on it. `doneMsg` now `{label, err, report, summary}`.
+Races: `esc` cancel vs `doneMsg` arrival (cancel still lands as `failed`,
+not `cancelled`); double-run guarded by `handle != nil`.
 
 ## Target — explicit FSM
 

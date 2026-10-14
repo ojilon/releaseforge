@@ -2,19 +2,30 @@
 
 ## Current state
 
-`internal/app/app.go:56 Model` owns project + input + viewport + ring +
-history + phase + async handle. `Update:172` + `exec:383` + `View:288`
-in one file (~833 lines). Works for single viewport + command bar, but:
+> Delta: the 833-line `internal/app/app.go` is GONE — split into
+> `model/run/update/view/commands/scan/version/jobs/logs/notes/sign/
+> install/gitcmd/files/scripts/dashboard.go` (same `Model`, same behavior,
+> tests green). First dashboard panel exists (`dashboard.go:buildDash`,
+> shown at `width >= 100` in `view.go:View`). Theme extracted
+> (`internal/tui/theme.go`). What follows still holds:
+
+Old `Model` owned project + input + viewport + ring + history + phase +
+async handle. New files keep that shape (no Router yet): `update.go:Update`
++ `commands.go:exec` + `view.go:View`. Works for single viewport +
+dashboard + command bar, but:
 
 ## Problems
 
-1. No windows/tabs — everything appends to one ring; test output drowns git info.
-2. Focus bugs: input + viewport both `Update()` every key (`:281`); esc/cancel
+1. No windows/tabs — one ring + one dashboard panel; test output still
+   drowns git info.
+2. Focus bugs: input + viewport both `Update()` every key; esc/cancel
    races with `doneMsg`; `render()` follow-mode is the only scroll policy.
-3. Business logic in view (`doScan/doVersion/doLogs/doNotes`) — untestable
-   without a TUI harness; CLI duplicates paths.
-4. Styling inline (`tui.*Style` per call) — no layout manager, narrow-terminal
-   fallback is a branch in `View`, not a layout pass.
+3. Business logic in view (`doScan/doVersion/doLogs/doNotes/doSign/…` are
+   still `*Model` methods, one file per verb) — no `services.go` with
+   zero tea imports; CLI still duplicates paths.
+4. Styling centralized in `theme.go`/`styles.go` now (done), but no layout
+   manager: narrow-terminal fallback is a branch in `View`, sizing math
+   lives in `model.go:layout()`.
 
 ## Target — Elm-style window manager
 
@@ -65,13 +76,16 @@ cancel is `ctrl+x` on Build/Tests only; see `06`).
 
 - Bubble Tea docs: https://github.com/charmbracelet/bubbletea (Elm arch,
   commands vs messages). Bubbles: https://github.com/charmbracelet/bubbles
-- `docs/04-tui-design.md`, `internal/app/app_test.go` (keep parse tests green).
+- `docs/04-tui-design.md`, `internal/app/app_test.go` (keep parse tests green;
+  note `TestViewWideAndNarrow` pins the `<80` fallback + dashboard-hidden case).
 - Lipgloss layout: https://github.com/charmbracelet/lipgloss
 
 ## Tasks
 
+- [x] Split `app.go` into one file per job (done — `internal/app/*.go`).
+- [x] Extract theme (`internal/tui/theme.go`) + first dashboard panel.
 - [ ] Extract `parse()` → `internal/tui/intent.go` with table tests.
-- [ ] Extract services (`doScan/doVersion/doLogs/doNotes`) → `internal/app/services.go` (no tea imports).
+- [ ] Extract services (`doScan/doVersion/doLogs/doNotes/…`) → `internal/app/services.go` (no tea imports).
 - [ ] Introduce `Router` + 2 windows (Status, Logs) behind flag; single-viewport stays default until parity.
 - [ ] Move follow/scroll policy into viewport wrapper with tests.
 

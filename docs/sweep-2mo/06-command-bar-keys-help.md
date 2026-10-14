@@ -2,14 +2,18 @@
 
 ## Current state
 
-`app.go:93` placeholder lists verbs; `parse:374` lowercases first field;
-`Update:229` handles ctrl+c / esc / up-down / enter / ctrl+l. Help is a
-static string (`helpText:485`).
+`model.go:New()` placeholder lists verbs; `commands.go:parse` lowercases
+first field; `update.go:onKey` handles ctrl+c / esc-cancel / up-down /
+enter / ctrl+l. `bat` streams async like build (`scripts.go:startScript`,
+`pendingRun.kind="script"`). Help is a static string (`commands.go:helpText`).
+Verbs now: status/scan/recent/version/build [variant] [version]/test/
+sign/install/devices/git/ls/dir/pwd/cat/bat/notes/logs/clear/theme/quit.
 
 ## Problems
 
-- `esc` overloaded (cancel run AND would-be unfocus); up/down history has
-  no search; no `tab`-completion; help goes stale when verbs change.
+- `esc` STILL overloaded (cancel run AND would-be unfocus); up/down history
+  has no search; no `tab`-completion; help goes stale when verbs change
+  (already happened twice — `helpText` updated by hand).
 
 ## Target
 
@@ -26,8 +30,10 @@ static string (`helpText:485`).
 ```go
 type Intent struct{ Verb, Sub string; Args []string; Flags map[string]string }
 var verbs = []Verb{
-    {Name: "build", Subs: []string{"debug","release"}, Help: "gradle assemble / go build"},
+    {Name: "build", Subs: []string{"debug","release"}, Help: "go build / gradle assemble, optional version first"},
     {Name: "test", Subs: []string{"unit","instrumented","all"}, Help: "run tests"},
+    {Name: "sign", Subs: []string{}, Help: "sign APK (data-root keystore)"},
+    {Name: "bat", Subs: []string{}, Help: "run .bat/.ps1/.sh/.py with live logs"},
 }
 func Complete(prefix string) []string { /* filter verbs+subs */ }
 ```

@@ -2,21 +2,26 @@
 
 ## Current state
 
-`internal/tui/styles.go` + `internal/app/app.go:288 View()` — bordered
-header, `Pill(phase)`, sparkline, `BarStyle` input, state footer. Correct
-libraries (bubbletea 1.3.6, bubbles, lipgloss 1.1.0, huh) but:
+`internal/tui/theme.go` + `styles.go` + `view.go:View()` — `Theme` struct
+(`DarkTheme`/`LightTheme`, `Current`, `SetTheme`, `PaintInput`), bordered
+header (`PanelBorder`), `Pill(phase)`, sparkline, left-bordered input
+(`BarStyle`), thin log border (`LogBoxStyle`), dashboard border
+(`DashBoxStyle`), state footer. Correct libraries (bubbletea 1.3.6,
+bubbles, lipgloss 1.1.0, huh) but:
 
-- No theme object; colors hard-coded per call.
-- No `NO_COLOR` / light-background / narrow paths except one `<80` branch.
+- Theme object exists; `NO_COLOR` / light-background auto-detect still missing.
+- Narrow path is `<80` branch + dashboard at `>=100`; no `layout.go`,
+  sizing math in `model.go:layout()`.
 - `viewport` + `textinput` wired manually; mouse + alt-screen flags fixed.
 - Truncation uses byte slices in places (see v0.0.2 cleanup: UTF-8 bug).
 
 ## Target
 
-- `internal/tui/theme.go`: `Theme{Header,Accent,OK,Err,Muted,Border}` +
-  `DetectTheme(env, bg)`; every style derives from it.
+- `internal/tui/theme.go`: DONE (`Theme{HeaderFg/HeaderBg/Text/Dim/Border/
+  Accent/OK/Busy/Fail}` + `SetTheme("dark"|"light")`; every style derives
+  from it via `refreshStyles()`). Still open: `DetectTheme(env, bg)`.
 - `internal/tui/layout.go`: `Layout(width,height) → HeaderH/BodyH/FooterH`;
-  windows receive exact rects; no magic `3` in `Update`.
+  windows receive exact rects; replace `model.go:layout()` magic numbers.
 - Runewidth-safe `Truncate(s, n)`, `Table(rows, widths)` helpers with tests.
 
 ## Snippets
@@ -58,7 +63,8 @@ Bubbles patterns to adopt:
 
 ## Tasks
 
-- [ ] Add `theme.go`, `layout.go`, `truncate.go` + unit tests (incl. CJK/emoji).
+- [x] Add `theme.go` (done — presets + `SetTheme` + `PaintInput` + tests via `styles_test.go`).
+- [ ] Add `layout.go`, `truncate.go` + unit tests (incl. CJK/emoji).
 - [ ] Replace string footers with `key.Binding` help view.
 - [ ] Narrow (`<80`), normal, wide (`>140`) snapshots via `termenv` fake width tests.
 

@@ -1,9 +1,16 @@
-# 51 — Installer (Inno/NSIS, seeded data-root, smoke test)
+# 51 — Installer (seeded data-root, smoke test)
 
 ## Current state
 
 `installer/main.go` (+`main_test.go`) builds `installer.exe`;
-`installer-test.exe` exists; seeded data-root behavior; `RELEASE.md` notes.
+`installer-test.exe` exists; seeded data-root behavior.
+Lane-C flow: `build-installer.bat [version]` builds STAMPED
+`dist/releaseforge.exe` + `dist/installer.exe` (`-ldflags ToolVersion`)
++ versioned zip; installer records the stamped version in `install.json`
+(verified: binary `--version` ≡ installer line ≡ `install.json`).
+`release <version>` Go path builds `installer-<version>.exe` the same way
+and zips/publishes it with the binary + notes. Temp-dir
+`--non-interactive --dest` installs proven (see `30`).
 
 ## Harden
 

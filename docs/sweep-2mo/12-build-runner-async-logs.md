@@ -2,9 +2,12 @@
 
 ## Current state
 
-`internal/build/runner.go` `Start()` → `Handle{Lines,Done}`; `app.go:441
-waitLine` batches ≤100 lines; `esc` cancels; logs via `rflog.LogPath`.
-Timeouts only for instrumented tests (`app.go:701`).
+`internal/build/runner.go` `Start()` → `Handle{Lines,Done}`; `run.go:waitLine`
+batches ≤100 lines; `esc` cancels; logs via `rflog.LogPath`.
+Timeouts only for instrumented tests (`jobs.go:doTest`). `bat` scripts reuse
+the same pump (`scripts.go:startScript`, `pendingRun.kind="script"`).
+`doneMsg` now carries `summary` (`Report.Summary`) + `report` items;
+failures render via `tui.RenderReport`.
 
 ## Hardening checklist
 
@@ -30,7 +33,8 @@ type Handle struct {
 func Start(program string, args []string, o Options) *Handle
 ```
 
-Keep `waitLine` batching; add `doneMsg{report}` from `Report.Format()`.
+Keep `waitLine` batching; `doneMsg{report,summary}` from `Report.Format()` +
+`Report.Summary` (done — `run.go:finishRun`).
 
 ## Read
 

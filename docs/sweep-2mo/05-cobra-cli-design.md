@@ -3,15 +3,19 @@
 ## Current state
 
 `cmd/` has one file per verb; `root.go` owns `--data-root`. Good shape.
-Risk: CLI and TUI diverge (TUI `exec` string-switch vs Cobra flags).
+New twins since v0.0.2: `sign.go` (data-root keystore, `--apk/--keystore/
+--alias/--apksigner`), `devices.go`. `build` takes `[variant] [version]`
+(version written first, never committed).
+Risk: CLI and TUI diverge (TUI `commands.go:exec` string-switch vs Cobra flags).
 
 ## Target
 
 - Single source of truth: `internal/app/services.go` functions called by
   BOTH `cmd/*` and TUI router. Cobra files only parse flags → call service
-  → print report.
+  → print report. (Still open — TUI verbs live in `internal/app/*.go`.)
 - Every TUI verb has a CLI twin: `status/scan/recent/version/build/test/
-  notes/logs/release/install/doctor/run/logcat`.
+  notes/logs/release/install/sign/devices/doctor/run/logcat`.
+  TUI-only (no CLI twin yet): `git/ls/dir/pwd/cat/bat/clear/theme`.
 - `--json` on read verbs (`scan/status/version/logs`) for scripting.
 - Consistent exit codes: 0 ok, 1 usage, 2 infra (missing SDK), 3 build/test failure.
 

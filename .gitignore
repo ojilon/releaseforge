@@ -31,6 +31,9 @@ Thumbs.db
 .data/
 ReleaseForgeData/
 
+# Local-only version truth (each machine bumps its own; see docs/sweep-2mo/26)
+/VERSION
+
 # Build artifacts that may appear during development
 /dist/
 /bin/

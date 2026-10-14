@@ -2,9 +2,15 @@
 
 ## Current state
 
-`internal/android/sign.go` (+`sign_test.go`): locate → sign → verify;
-password via prompt (huh); config holds path+alias only. `release --dry-run`
-+ tag safety exist.
+`internal/android/sign.go` (+`sign_test.go`): locate → sign → verify.
+`signing.go` (+`signing_test.go`): `SigningConfig`, `SigningDir`
+(`<data-root>/signing/<project>/`, keystore OUTSIDE the repo),
+`ResolveSigning` (flags > project `signing.json` > global `signing.json` >
+env), `KeystorePassword` (env `RF_KEYSTORE_PASS` only, never disk),
+`SignApkCapture`/`InstallCapture` (combined-output variants for the TUI).
+TUI `sign [apk] [--alias X]` (`app/sign.go`), CLI `sign` (`cmd/sign.go`,
+password env else stdin prompt) + `devices` (`cmd/devices.go`).
+`release --dry-run` + tag safety exist.
 
 ## Harden
 
@@ -42,6 +48,6 @@ manifest.Signer = certs.SHA256
 ## Acceptance
 
 ```powershell
-releaseforge release --dry-run --version 9.9.9
+releaseforge release 9.9.9 --dry-run  # version is positional
 # shows apksigner + verify lines; no password in output
 ```

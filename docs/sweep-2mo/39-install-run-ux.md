@@ -3,6 +3,9 @@
 ## Current state
 
 `Install()` + `adbStream` install/launch; `cmd/install.go`, `run.go` exist.
+TUI twins exist: `install [debug|release] [--device S]` (packaged release
+dir first, then Gradle outputs — still newest-glob, NOT manifest-driven)
++ `devices` (`app/install.go`). `InstallCapture` transcript prints in pane.
 Flow: pick signed APK from manifest (`22`) → pick device (huh) → install →
 launch → optionally tail logcat (`38`).
 

@@ -2,19 +2,21 @@
 
 > Dedicated planning folder for the slow, sure rewrite pass.
 > Location: `docs/sweep-2mo/`. Read in numeric order. Every file is
-> standalone but cross-links. Code refs are `path:line` from repo root
-> at v0.0.2-era (`internal/app/app.go`, `internal/project/scan.go`, …).
+> standalone but cross-links. Code refs are `path:line` from repo root;
+> v0.0.2-era refs (`internal/app/app.go`, …) carry a `> Delta` note where
+> the code moved on (split TUI, theme, new commands).
 
 ## Why this folder exists
 
 Up to this point the project was AI-built and it shows: scan + TUI +
-Gradle/Android + self-host works, but the TUI logic (`internal/app/app.go:172`
-`Update`, `exec` at `:383`) is a single god-model, styling is ad-hoc
-(`internal/tui/styles.go`), and forward ideas (prebuilt `.so` handoff,
+Gradle/Android + self-host works, but the TUI logic (was
+`internal/app/app.go:172 Update`, `exec` at `:383` — since split into
+`internal/app/*.go`, one file per job) had no structure, styling was ad-hoc
+(now `internal/tui/theme.go`), and forward ideas (prebuilt `.so` handoff,
 Zig package manager, Odin/Win32 native window, test/diff dashboards,
-one-key git automation, updater) have no design home.
-
-This sweep fixes that over ~8 weeks without breaking daily use.
+one-key git automation, updater) have no design home. First dashboard panel
++ theme + sign/install/bat commands are built (see `01` deltas); the
+rest of this sweep fixes the remainder over ~8 weeks without breaking daily use.
 
 ## Reading order
 

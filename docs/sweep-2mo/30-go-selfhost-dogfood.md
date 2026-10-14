@@ -2,22 +2,21 @@
 
 ## Current state
 
-v0.0.1 self-hosted tag + GitHub pre-release + installer (`installer/`,
-`RELEASE.md`, `VERSION`); `release` supports `go` type
-(`go test ./...`, `go build`).
-
-## Keep sharp
-
-- `VERSION` file is truth; `release --version X` writes it, tags `vX`,
-  attaches `dist/releaseforge.exe` (+ checksums + notes).
-- Installer (`installer/`) seeds data-root; test install in a VM snapshot
-  before every minor (`installer-test.exe` exists — use it).
-- `go vet + go test` gate is non-skippable; add `gofmt -l` gate.
+Lane-C packaging exists: `build-installer.bat [version]` (version =
+arg else `VERSION` file) builds stamped `dist/releaseforge.exe` +
+`dist/installer.exe` + `dist/releaseforge-<version>.zip`.
+`release <version> [--pre]` (`cmd/release.go:releaseGo`) does version →
+test → stamped binary → STAMPED installer (`installer-<version>.exe`) →
+notes → zip (binary+installer+notes) → tag → `gh release create`;
+`--dry-run` prints the plan incl. installer lines. `VERSION` is gitignored
+(local-only); `internal/version/version.go` default still needs `SyncDefault`
+(see `26`). Installer smoke path: `installer-test.exe` + `--non-interactive
+--dest` (proven in temp dirs).
 
 ```powershell
 go vet ./...; go test ./...
-go build -o dist/releaseforge.exe .
-releaseforge release --version <next> --dry-run
+.\build-installer.bat 0.0.7
+releaseforge release 0.0.7 --pre --dry-run
 ```
 
 ## Read
@@ -26,11 +25,15 @@ releaseforge release --version <next> --dry-run
 
 ## Tasks
 
-- [ ] `release` go-path asserts `VERSION` ↔ tag ↔ binary `--version` match.
+- [x] `build-installer.bat` (stamped pair + zip) — done, verified (binary
+  `--version` + installer `install.json` agree).
+- [x] `release` Go path builds + zips stamped installer — done.
+- [ ] `release` go-path asserts `VERSION` ↔ tag ↔ binary `--version` ↔
+  installer `install.json` match.
 - [ ] Installer smoke test scripted (`scripts/`-style, but Go).
 
 ## Acceptance
 
 ```powershell
-releaseforge release --dry-run --version 9.9.9  # inside releaseforge itself
+releaseforge release 9.9.9 --dry-run  # inside releaseforge itself (note: version is positional, not --version)
 ```
