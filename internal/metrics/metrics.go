@@ -88,6 +88,35 @@ func Last(dataRoot, project, kind string) (Record, bool) {
 	return last, found
 }
 
+// Recent returns up to n records, newest first. Used by the Status / Tests
+// dashboards; a missing or partially corrupt file simply yields fewer rows.
+func Recent(dataRoot, project string, n int) []Record {
+	if n <= 0 {
+		n = 10
+	}
+	data, err := os.ReadFile(path(dataRoot, project))
+	if err != nil {
+		return nil
+	}
+	var all []Record
+	for _, l := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		var r Record
+		if json.Unmarshal([]byte(l), &r) == nil {
+			all = append(all, r)
+		}
+	}
+	if len(all) > n {
+		all = all[len(all)-n:]
+	}
+	for i, j := 0, len(all)-1; i < j; i, j = i+1, j-1 {
+		all[i], all[j] = all[j], all[i]
+	}
+	return all
+}
+
 // Ago renders an RFC3339 timestamp as "3m ago" style text.
 func Ago(at string) string {
 	t, err := time.Parse(time.RFC3339, at)

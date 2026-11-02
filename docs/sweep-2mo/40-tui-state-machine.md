@@ -1,5 +1,10 @@
 # 40 — TUI State Machine (idle/building/testing/failed/ok done right)
 
+> Delta (2026-11-02): `internal/app/phase.go` implements the FSM with
+> `cancelled`; `RunState` merges handle/running/pending fields; a late
+> `doneMsg` after cancel is classified correctly. `ctrl+x` is the explicit
+> cancel key. See [../CORRECTIONS.md](../CORRECTIONS.md) C6/C7.
+
 ## Current state
 
 `model.go` `phase string` (`idle|building|testing|failed|ok`), set in

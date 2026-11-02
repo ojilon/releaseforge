@@ -121,6 +121,27 @@ func Origin(dir string) string {
 	return out
 }
 
+// StatusPorcelain returns `git status --porcelain` lines (may be empty).
+func StatusPorcelain(dir string) ([]string, error) {
+	out, err := run(dir, "status", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out) == "" {
+		return nil, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// DiffStat returns `git diff --stat` (unstaged changes).
+func DiffStat(dir string) (string, error) {
+	out, err := run(dir, "diff", "--stat")
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
 // AheadBehind returns commits ahead/behind the upstream. ok is false when
 // there is no upstream (not an error).
 func AheadBehind(dir string) (ahead, behind int, ok bool) {

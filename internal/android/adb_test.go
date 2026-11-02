@@ -3,15 +3,44 @@ package android
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-// fakeAdb writes an adb.bat fixture. argsLog receives "%*" of install/launch
-// calls; logcat/pidof/devices get canned responses.
+// fakeAdb installs a fake `adb` on PATH. It is deliberately cross-platform:
+// the original fixture was a .bat script, so four tests failed on any non-
+// Windows host with "exec: adb: executable file not found".
+// argsLog receives every non-canned invocation; devices/logcat/pidof return
+// fixed responses.
 func fakeAdb(t *testing.T, argsLog string) string {
 	t.Helper()
 	dir := t.TempDir()
+	t.Setenv("RF_TEST_ADB_LOG", argsLog)
+	if runtime.GOOS != "windows" {
+		script := `#!/bin/sh
+case "$1" in
+  devices)
+    printf 'List of devices attached\nemulator-5554 device\ndeadbeef unauthorized\n'
+    exit 0 ;;
+  logcat)
+    printf '10-03 20:00:00.000  1234  5678 I FooTag: hello world\n'
+    printf '10-03 20:00:01.000  9999  9999 I BarTag: other line\n'
+    printf '10-03 20:00:02.000  1234  5678 I FooTag: second line\n'
+    exit 0 ;;
+  shell)
+    if [ "$2" = pidof ]; then printf "1234\n"; exit 0; fi ;;
+esac
+printf '%s\n' "$*" >> "$RF_TEST_ADB_LOG"
+exit 0
+`
+		path := filepath.Join(dir, "adb")
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		return dir
+	}
 	script := "@echo off\r\n" +
 		"if \"%1\"==\"devices\" (\r\n" +
 		"  echo List of devices attached\r\n" +

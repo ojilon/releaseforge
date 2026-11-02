@@ -1,5 +1,9 @@
 # 44 — Fuzzy Finder & Command Palette (open anything in 3 keys)
 
+> Delta (2026-11-02): `internal/tui/fuzzy.go` (pure scorer + `Rank`) and the
+> `ctrl+p`/`ctrl+r` palette over commands, recent projects, logs, windows and
+> history are built. Benchmarks and CLI `--fuzzy` remain future work.
+
 ## Goal
 
 `ctrl+p` palette: fuzzy-search projects (recent + scan cache), files

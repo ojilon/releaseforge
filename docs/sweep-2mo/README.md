@@ -1,5 +1,10 @@
 # ReleaseForge 2-Month Sweep — Master Index
 
+> Delta (2026-11-02): a coherent slice of this archive (03, 04, 06, 07,
+> 40, 41, 44) is now implemented. Each affected file carries its own Delta
+> note; the honest current state is [../STATE.md](../STATE.md). The remaining
+> items are still plans, not built features.
+
 > Dedicated planning folder for the slow, sure rewrite pass.
 > Location: `docs/sweep-2mo/`. Read in numeric order. Every file is
 > standalone but cross-links. Code refs are `path:line` from repo root;

@@ -28,6 +28,14 @@ Global rules, both paths:
 Supported types today: `go` and `android-gradle`. Wails / CMake / Python reuse
 this shape once their runners land; until then they are scan + notes only.
 
+> TUI note (2026-11-02): `releaseforge tui` is now a six-window shell.
+> `releaseforge commands` prints the same generated command reference shown
+> in the Help window (`?`). Typed paths with spaces must be quoted, e.g.
+> `open "D:\Dev\My App"`. `ctrl+o` opens a terminal folder picker, `ctrl+p`
+> the command palette, `ctrl+x` cancels a run. See
+> [`docs/04-tui-design.md`](docs/04-tui-design.md) and the
+> [`demo/`](demo/index.html).
+
 ---
 
 ## 1. Viewing a project — type, version, git state, paths

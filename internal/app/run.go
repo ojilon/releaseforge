@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ojilon/releaseforge/internal/build"
@@ -10,21 +11,27 @@ import (
 	"github.com/ojilon/releaseforge/internal/storage"
 )
 
-// linesMsg carries a batch of streamed output lines into the model.
-type linesMsg struct {
-	lines []rflog.Line
-}
+// linesMsg carries a batch of streamed output lines into the console.
+type linesMsg struct{ lines []rflog.Line }
 
-// doneMsg marks completion of an async command.
+// doneMsg marks completion of an async command. cancelled is set when the
+// user asked for it, so a late doneMsg never masquerades as a failure.
 type doneMsg struct {
-	label   string
-	err     error
-	report  []string
-	summary string
+	label     string
+	err       error
+	report    []string
+	summary   string
+	cancelled bool
 }
 
-// Run starts the interactive TUI. The data root must be initialised
-// (run `releaseforge init`); otherwise it returns a clear error.
+// tickMsg drives the 1s elapsed-time clock while a run is active.
+type tickMsg time.Time
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+// Run starts the interactive TUI. The data root must be initialised.
 func Run(dataRoot, projectDir string) error {
 	if strings.TrimSpace(dataRoot) == "" {
 		var err error
@@ -34,9 +41,11 @@ func Run(dataRoot, projectDir string) error {
 		}
 	}
 	if !storage.Exists(storage.GlobalConfigPath(dataRoot)) {
-		return fmt.Errorf("data root not initialised (%s missing) — run `releaseforge init` first", storage.GlobalConfigPath(dataRoot))
+		return fmt.Errorf("data root not initialised (%s missing) — run `releaseforge init` first",
+			storage.GlobalConfigPath(dataRoot))
 	}
-	p := tea.NewProgram(New(dataRoot, projectDir), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(New(dataRoot, projectDir),
+		tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }
@@ -45,11 +54,15 @@ func Run(dataRoot, projectDir string) error {
 // doneMsg once the process ends and its output is drained. Batching (first
 // line blocking, rest opportunistic up to 100) keeps fast output cheap.
 func (m *Model) waitLine() tea.Cmd {
-	h, okL, failL := m.handle, m.pendingOK, m.pendingErr
+	if m.run == nil || m.run.Handle == nil {
+		return nil
+	}
+	r := m.run // cancellation may land after this Cmd was created
+	h := r.Handle
 	return func() tea.Msg {
 		first, ok := <-h.Lines
 		if !ok {
-			return finishRun(h, okL, failL)
+			return finishRun(h, r.OKLabel, r.FailLabel, r.Cancelled)
 		}
 		batch := []rflog.Line{first}
 		for len(batch) < 100 {
@@ -63,15 +76,19 @@ func (m *Model) waitLine() tea.Cmd {
 				return linesMsg{lines: batch}
 			}
 		}
-		return linesMsg{lines: batch}
+		return tea.Msg(linesMsg{lines: batch})
 	}
 }
 
 // finishRun drains the result after output is exhausted.
-func finishRun(h *build.Handle, okL, failL string) tea.Msg {
+func finishRun(h *build.Handle, okL, failL string, cancelled bool) tea.Msg {
 	res := <-h.Done
-	if res.Success {
+	if res.Success && !cancelled {
 		return doneMsg{label: okL}
+	}
+	if cancelled {
+		return doneMsg{label: "cancelled " + failL, cancelled: true,
+			err: fmt.Errorf("stopped by user")}
 	}
 	var rep []string
 	summary := ""

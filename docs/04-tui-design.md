@@ -1,78 +1,185 @@
-# TUI design (current through v0.0.2)
+# TUI design (current — windowed shell, 2026-11-02)
 
-> v0.0.2 status: single viewport + command bar, implemented. There are no
-> tabs and no panes; the tab sketches below are retained as explicitly
-> future, not as built UI. Folder picker was deliberately never built.
+> Supersedes the v0.0.2 "single viewport + dashboard" design. That UI
+> (bordered header, one ring-backed viewport, fixed 34-col dashboard,
+> hand-written help) is gone. The intent is unchanged: a **persistent
+> command bar plus live panes** for local scan/build/test/release work.
+> See [STATE.md](STATE.md) for what is built and [CORRECTIONS.md](CORRECTIONS.md)
+> for why. Visual tour: [../demo/index.html](../demo/index.html).
 
 ## Inspiration
 
-Claude Code / Gemini CLI / OpenCode: **persistent command input**, live panes, open-folder flow, minimal chrome.
+Claude Code / Gemini CLI / OpenCode for the always-visible command input;
+`bubbletea` Elm architecture for routing; `bubbles` for every interactive
+widget; `lipgloss` for frames, tabs and exact geometry. No custom widget
+where a Charm component exists.
 
-## Layout (as built)
+## Layout (as built, 132 × 36)
 
 ```
-┌─ ReleaseForge 0.0.1 · SomeProject · v0.0.3_2 (4) · ready  ● idle ─┐
-│ context: main · clean · ▁▂▅                                     │
-├────────────────────────────────────────────────────────────────────┤
-│  (viewport — command echo, output blocks, ─── rule separators)    │
-├────────────────────────────────────────────────────────────────────┤
-│ > help                                                             │
-│ help · status · scan [path] · … (state-dependent footer)           │
-└────────────────────────────────────────────────────────────────────┘
+╭─ ReleaseForge 0.0.2 · atlas-app · v0.0.4 · ready   ● idle   Status ─────╮
+│ master · clean · █  ·  bar focus  ·  theme dark                          │
+╰─────────────────────────────────────────────────────────────────────────╯
+ 1 Status   2 Tests   3 Git   4 Console   5 Logs   6 Help
+╭─────────────────────────────────────────────────────────────────────────╮
+│ Project ─────────────────────────────────────   ╭─ At a glance ───────╮ │
+│ project     atlas-app                            │ phase    idle        │ │
+│ root        D:\Dev\atlas-app                     │ theme    dark        │ │
+│ version     v0.0.4                              │ branch   main        │ │
+│ …                                               ╰──────────────────────╯ │
+│ Recent runs ──────────────────────────────────────────────────────────  │
+│  when        kind   variant  result  time       (bubbles/table)          │
+╰─────────────────────────────────────────────────────────────────────────╯
+╭─ ❯ type a command · tab completes · ctrl+p palette · ctrl+o folder ──────╮
+╰─────────────────────────────────────────────────────────────────────────╯
+enter run · tab complete · ctrl+p command palette · ctrl+o pick folder · …
 ```
 
-- Top strip (bordered): tool + project + version + status + state pill, plus
-  a context line (branch · dirty/clean · commit sparkline). Narrow terminals
-  (<80 cols) fall back to a one-line header and `help|quit` footer.
-- Body: one scrollable viewport (ring-backed, 2000 lines; mouse wheel on).
-- Input: always-focused bar with `↑/↓` history (persisted to
-  `history/commands.jsonl`). `esc` cancels a running build/test, `ctrl+l`
-  clears.
-- Footer: key hints that change with phase (`esc cancels` while running).
+- **Header frame** (4 lines normal, 3 compact, 1 tiny): tool + project +
+  version + status, phase pill, active-window chip, context line
+  (branch · clean/dirty · commit sparkline · focus · theme).
+- **Tab strip**: numbered windows, active tab highlighted. Compact terminals
+  collapse it to numbers + the active label; tiny terminals drop it.
+- **Body frame**: the active window, rendered into an exact content rect.
+  Wide layouts (≥120 cols) can split it into a primary pane + side card.
+- **Command bar frame**: always focused by default, `↑/↓` history (persisted
+  to `history/commands.jsonl`), `tab` completion.
+- **Footer**: generated from `bubbles/key` bindings through
+  `bubbles/help` (`ShortHelpView`) — automatically truncates with `…` on
+  narrow terminals, and swaps in `ctrl+x cancel` while a run is active.
 
-## Tabs (future, not built)
+Everything is sized by `internal/tui/layout.go:Compute`. `Clamp` truncates
+long lines with `ansi.Truncate` (wide-rune/emoji safe) and pads to the exact
+rect, so no block ever wraps. Snapshot tests assert exact width and height
+at 50, 70, 100, 160 and 200 columns.
 
-| Tab | Content |
+## Windows
+
+| # | Window | Content | Charm component |
+|---|--------|---------|-----------------|
+| 1 | **Status** | project facts, cached scan, git/upstream, last build, recent runs, live side card | `bubbles/table` + lipgloss cards |
+| 2 | **Tests** | run history from `metrics.jsonl` + tail of the last test log | `bubbles/table` + `viewport` |
+| 3 | **Git** | `s` status · `d` diff · `l` log, branch/upstream/tag summary | `bubbles/table` + `viewport` |
+| 4 | **Console** | command echo, command output, streamed build/test/script lines | `viewport` + ring + `bubbles/spinner` |
+| 5 | **Logs** | persisted logs browser + preview | `bubbles/list` + `viewport` |
+| 6 | **Help** | generated command reference + key cheat sheet | `bubbles/table` |
+
+Each window is an independent component (`Window` interface in
+`internal/app/windows.go`) with its own viewport/cursor/offset. Switching
+never resets scroll position. Only the active window receives keys and mouse
+messages. `r` refreshes its cached data.
+
+The Console keeps the original follow policy: it sticks to the bottom only
+when the user was already at the bottom (`f` re-follows, `g`/`G` jump).
+
+## Overlays
+
+| Key | Overlay | Behaviour |
+|-----|---------|-----------|
+| `ctrl+p` | fuzzy command palette | `bubbles/list` + `textinput`, ranked by `tui.Rank` over commands, recent projects, logs, windows and history |
+| `ctrl+r` | history search | same overlay, history-only source; selection fills the bar |
+| `ctrl+o` / `open` (no path) | folder picker | `bubbles/filepicker` with `DirAllowed=true`, `FileAllowed=false`; `enter` selects a directory, `s` uses the directory you are in, `esc` closes |
+
+Overlays are centered inside the body frame with a double border, so header,
+tabs, bar and footer stay visible. This is the in-terminal answer to the
+vision's folder picker; a native Windows dialog is still not built.
+
+## Keys
+
+| Key | Action |
 |-----|--------|
-| Overview | Name, root, type, version, last scan |
-| Git | Recent commits and tags from scan cache |
-| Tools | Detected tools, frameworks, config files |
-| Logs | Build logs |
-| Config | Data-root path, project config path |
+| `1..6` (window focused), `alt+1..6` | switch window |
+| `]` / `[` (also `alt+right/left`) | next / previous window |
+| `ctrl+w` | toggle window focus (arrows then scroll the pane) |
+| `esc` | close overlay / return focus to bar / clear input / cancel a run (compat) |
+| `enter` | run command / activate palette item |
+| `↑ ↓` | history (bar) / navigate (window) |
+| `tab` | complete verb or argument |
+| `ctrl+p` / `ctrl+r` | palette / history search |
+| `ctrl+o` | folder picker |
+| `ctrl+x` | cancel run |
+| `ctrl+l` | clear console |
+| `?` / `f1` / `help` | Help window |
+| `r` | refresh active window |
+| `ctrl+c` / `quit` | leave |
 
-Equivalent coverage today, without tabs: `status` (project + git + last
-build), `scan` output, `logs show|tail`, `recent`, `version`. Build /
-Metrics tabs stay future.
+Bare digits are deliberately **not** global window shortcuts while the bar
+is focused: `open 2`, `build release 0.0.4` and `version --set 1.2.3` must
+be typeable. `alt+1..6` (and `1..6` once the window owns focus) switch panes.
 
-## Command bar commands
+## Command bar
 
-| Input | Action |
-|-------|--------|
-| `open <path>` / `scan [path]` / `rescan` | Scan path (typed only, no dialog) |
-| `recent` | List recent projects |
-| `status` | Tool + project + version (`[cache]` provenance) + data root + upstream + last build |
-| `version [--set X \| bump X \| --code-only]` | Show or set version |
-| `build debug\|release` | Async Gradle/Go build, streamed, `esc` cancels |
-| `test [kind]` | Async tests (`--device` for instrumented) |
-| `notes [version]` | Draft notes from grouped changelog |
-| `logs [show\|last\|tail]` | List/read/tail persisted logs |
-| `clear` / `ctrl+l` | Clear viewport |
-| `help` / `-h` / `?` | Show help **in the main pane** |
-| `quit` / `exit` / `q` | Leave TUI |
+`internal/tui/intent.go:Verbs` is the single grammar. It drives:
 
-Unknown commands: short error + hint to type `help`. There is no `release`,
-`install`, `run`, or `doctor` verb — those are CLI-only, deliberately (they
-change the world; the bar is for inspection plus build/test).
+- dispatch (`commands.go:exec`),
+- generated Help window and `releaseforge commands` CLI output,
+- `tab` completion (verbs, subcommands, recent paths, theme names),
+- palette candidates,
+- "did you mean …" suggestions for unknown verbs.
 
-## Help view
+All v0.0.2 verbs still work: `open|scan|rescan`, `recent`, `status`,
+`version`, `build`, `test`, `bat`, `sign`, `install`, `devices`, `git`,
+`ls|dir`, `pwd`, `cat`, `notes`, `logs`, `clear`, `help`, `quit`. Added:
+`theme`, `window`, and recent-index / folder-picker forms of `open`.
+`release`, `doctor` and `logcat` stay CLI-only by design.
 
-Rendered in the main pane (Viewport), not a one-line toast. Include command table above and note that CLI flags are available via `releaseforge --help` outside the TUI.
+`open "D:\Dev\My App"` works: the tokenizer honors quotes and keeps Windows
+backslashes literal. `open 2` opens recent entry #2. Error lines are styled
+but never hidden; raw output always lands in the Console and in the
+persisted log under the data root.
 
-## Folder open
+## Run state
 
-Typed paths only (`open D:\Dev\MyRepo`), then scan → recent → header
-refresh. No OS dialog (see `docs/09-scan-foundation.md` for the decision).
+`phase.go` is an explicit FSM:
 
-## Libraries
+```
+idle → building|testing → ok | failed | cancelled → idle
+```
 
-- bubbletea (+ `WithAltScreen`, `WithMouseCellMotion`), lipgloss, bubbles (textinput, viewport), huh (init form, device picker, password prompt)
+A `RunState` owns the handle, kind, variant, start time, labels and cancel
+flag. `ctrl+x` marks it cancelled *before* killing the process, so a late
+`doneMsg` renders `■ cancelled`, never `✗ failed`. The Console shows a
+`bubbles/spinner` plus elapsed seconds while busy; metrics are recorded once
+on completion.
+
+## Theme
+
+`internal/tui/theme.go` defines `dark`, `light` and `mono`. Startup calls
+`DetectTheme`: `RELEASEFORGE_THEME` → `NO_COLOR` / `TERM=dumb` →
+`COLORFGBG` → terminal background (TTY only) → dark. `SetTheme` rebuilds
+every derived style *and* repaints the focused `textinput` and palette input.
+`mono` emits no color at all. `theme dark|light|mono` switches at runtime;
+the choice is session-only.
+
+## Libraries actually used
+
+| Library | Where |
+|---------|-------|
+| `bubbletea` | `Model.Init/Update/View`, `tea.Cmd` streaming, `tea.Tick`, `WithAltScreen`, `WithMouseCellMotion` |
+| `bubbles/textinput` | command bar + palette query |
+| `bubbles/viewport` | Console, Tests preview, Git detail, Logs preview |
+| `bubbles/table` | Status recent runs, Tests history, Git log, Help commands |
+| `bubbles/list` | Logs browser, command/history palette |
+| `bubbles/filepicker` | folder picker overlay |
+| `bubbles/spinner` | live build indicator |
+| `bubbles/key` + `bubbles/help` | all bindings + generated footer |
+| `bubbles/progress` | available, not yet wired (no determinate progress source) |
+| `lipgloss` | frames, tabs, chips, pills, rules, cards, `JoinHorizontal/Vertical`, `Place` |
+| `huh` | CLI `init` wizard + device picker (unchanged; not embedded in the TUI) |
+
+## Not built (deliberately)
+
+- Native OS folder dialog; the terminal picker is the substitute.
+- `glamour` markdown rendering for notes (sweep 43).
+- `huh` settings form inside the TUI (sweep 42).
+- Deterministic progress bar for builds (Gradle/Go expose no reliable %).
+- Extracted `services` layer / `go-git` (sweep 03).
+- Persisted UI preferences, CI config, metrics charts.
+
+## Acceptance checks
+
+```bash
+go test ./internal/app/ -run 'TestView|TestSingleConsumer|TestWindowSwitch|TestPalette|TestCancel' -v
+go test ./internal/tui/ -v
+go run ./tools/demo -out demo       # 10 frames, exact geometry
+```

@@ -11,7 +11,7 @@ import (
 
 func TestEnsureTreeFreshAndRerun(t *testing.T) {
 	tmp := t.TempDir()
-	payload := filepath.Join(tmp, "releaseforge.exe")
+	payload := filepath.Join(tmp, exeName("releaseforge"))
 	if err := os.WriteFile(payload, []byte("fake-binary-v1"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestEnsureTreeFreshAndRerun(t *testing.T) {
 	if err := EnsureTree(appRoot, payload, "0.0.2"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join(appRoot, "bin", "releaseforge.exe"))
+	got, err := os.ReadFile(filepath.Join(appRoot, "bin", exeName("releaseforge")))
 	if err != nil || string(got) != "fake-binary-v2" {
 		t.Fatalf("binary not updated: %q %v", got, err)
 	}

@@ -11,17 +11,17 @@ import (
 )
 
 var (
-	cfgFile   string
-	dataRoot  string
+	cfgFile    string
+	dataRoot   string
 	projectDir string
-	verbose   bool
+	verbose    bool
 )
 
 // rootCmd is the base command when called without subcommands.
 // Running with no args launches the interactive TUI.
 var rootCmd = &cobra.Command{
-	Use:   "releaseforge",
-	Short: "Local release, build, test and lifecycle tool for Android & PC projects",
+	Use:     "releaseforge",
+	Short:   "Local release, build, test and lifecycle tool for Android & PC projects",
 	Version: version.ToolVersion,
 	Long: `ReleaseForge owns the full local lifecycle of your projects:
 
@@ -60,6 +60,7 @@ func init() {
 	rootCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(notesCmd)
+	rootCmd.AddCommand(commandsCmd)
 }
 
 // resolveDataRoot applies --data-root / --config / env / default precedence.

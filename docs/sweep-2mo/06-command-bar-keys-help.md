@@ -1,5 +1,10 @@
 # 06 — Command Bar, Keys, Help
 
+> Delta (2026-11-02): `internal/tui/intent.go` is the single verb table driving
+> help, completion, palette and suggestions; `tab` completes, `ctrl+r` searches
+> history, `ctrl+x` cancels, `esc` closes/focuses. Bare `1..6` were moved to
+> window-focus + `alt+1..6` so digits stay typeable. See [../04-tui-design.md](../04-tui-design.md).
+
 ## Current state
 
 `model.go:New()` placeholder lists verbs; `commands.go:parse` lowercases

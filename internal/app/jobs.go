@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ojilon/releaseforge/internal/build"
@@ -10,16 +11,17 @@ import (
 	"github.com/ojilon/releaseforge/internal/project"
 	"github.com/ojilon/releaseforge/internal/storage"
 	"github.com/ojilon/releaseforge/internal/tui"
-	"time"
 )
 
-// doBuild starts an async build (debug|release [version]). Returns a status
-// line plus a command that streams output back into Update.
-// With a version (build release 0.0.4) it writes the version file first
-// (same as version --set: file only, never committed) so the stamp uses it.
+// doBuild starts an async build (debug|release [version]). With a version it
+// writes the version file first (file only, never committed) so the stamp
+// uses it. Returns a status line plus the streaming command.
 func (m *Model) doBuild(variant, setVer string) (string, tea.Cmd) {
 	variant = strings.ToLower(strings.TrimSpace(variant))
 	setVer = strings.TrimSpace(setVer)
+	if m.run != nil {
+		return "a build/test/script is already running (ctrl+x cancels)", nil
+	}
 	info, err := project.Detect(m.projectDir)
 	if err != nil {
 		return tui.ErrorStyle.Render("build: " + err.Error()), nil
@@ -27,9 +29,6 @@ func (m *Model) doBuild(variant, setVer string) (string, tea.Cmd) {
 	r, err := project.For(info)
 	if err != nil {
 		return tui.ErrorStyle.Render("build: " + err.Error()), nil
-	}
-	if m.handle != nil {
-		return "a build/test is already running (esc cancels)", nil
 	}
 	if setVer != "" {
 		if err := project.ValidateVersion(setVer); err != nil {
@@ -47,13 +46,11 @@ func (m *Model) doBuild(variant, setVer string) (string, tea.Cmd) {
 	}
 	logPath := rflog.LogPath(storage.LogsDir(m.dataRoot, info.Name), "build-"+variant)
 	h := build.Start(r.Program(), bargs, build.Options{Dir: info.Root, LogPath: logPath, Project: info.Name})
-	m.handle = h
-	m.running = true
+	m.installRun("build", variant, PhaseBuilding, h,
+		"build "+variant+" ok — log "+logPath, "build "+variant)
 	m.status = "building " + variant
-	m.phase = "building"
-	m.pendingRun.kind, m.pendingRun.variant, m.pendingRun.started = "build", variant, time.Now()
-	m.pendingOK, m.pendingErr = "build "+variant+" ok — log "+logPath, "build "+variant
 	m.refreshProject()
+
 	extra := ""
 	if out != "" {
 		extra = " → " + out
@@ -62,11 +59,15 @@ func (m *Model) doBuild(variant, setVer string) (string, tea.Cmd) {
 	if setVer != "" {
 		verNote = " (version " + setVer + ")"
 	}
-	return fmt.Sprintf("started build %s%s%s (log %s, esc cancels)", variant, verNote, extra, logPath), m.waitLine()
+	return fmt.Sprintf("started build %s%s%s (log %s, ctrl+x cancels)", variant, verNote, extra, logPath),
+		tea.Batch(m.console().StartSpinner(), m.waitLine())
 }
 
-// doTest starts an async test run. Same pattern as doBuild.
+// doTest starts an async test run (same pattern as doBuild).
 func (m *Model) doTest(kind string) (string, tea.Cmd) {
+	if m.run != nil {
+		return "a build/test/script is already running (ctrl+x cancels)", nil
+	}
 	info, err := project.Detect(m.projectDir)
 	if err != nil {
 		return tui.ErrorStyle.Render("test: " + err.Error()), nil
@@ -74,9 +75,6 @@ func (m *Model) doTest(kind string) (string, tea.Cmd) {
 	r, err := project.For(info)
 	if err != nil {
 		return tui.ErrorStyle.Render("test: " + err.Error()), nil
-	}
-	if m.handle != nil {
-		return "a build/test is already running (esc cancels)", nil
 	}
 	tasks, err := r.TestArgs(kind)
 	if err != nil {
@@ -88,12 +86,21 @@ func (m *Model) doTest(kind string) (string, tea.Cmd) {
 	if kind == "instrumented" || kind == "all" {
 		timeout = 30 * time.Minute
 	}
-	h := build.Start(r.Program(), tasks, build.Options{Dir: info.Root, LogPath: logPath, Project: info.Name, Timeout: timeout})
-	m.handle = h
-	m.running = true
+	h := build.Start(r.Program(), tasks, build.Options{Dir: info.Root, LogPath: logPath,
+		Project: info.Name, Timeout: timeout})
+	m.installRun("test", kind, PhaseTesting, h,
+		"test "+kind+" ok — log "+logPath, "test "+kind)
 	m.status = "testing " + kind
-	m.phase = "testing"
-	m.pendingRun.kind, m.pendingRun.variant, m.pendingRun.started = "test", kind, time.Now()
-	m.pendingOK, m.pendingErr = "test "+kind+" ok — log "+logPath, "test "+kind
-	return fmt.Sprintf("started test %s (log %s, esc cancels)", kind, logPath), m.waitLine()
+	m.refreshProject()
+	return fmt.Sprintf("started test %s (log %s, ctrl+x cancels)", kind, logPath),
+		tea.Batch(m.console().StartSpinner(), m.waitLine())
+}
+
+// installRun is the single place an async handle becomes app state.
+func (m *Model) installRun(kind, variant string, phase Phase, h *build.Handle, okLabel, failLabel string) {
+	m.run = &RunState{
+		Kind: kind, Variant: variant, Started: time.Now(), Handle: h,
+		OKLabel: okLabel, FailLabel: failLabel,
+	}
+	m.setPhase(phase)
 }

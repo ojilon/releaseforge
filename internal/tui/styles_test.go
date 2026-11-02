@@ -78,3 +78,33 @@ func stripANSI(s string) string {
 	}
 	return b.String()
 }
+
+func TestKeyValueAligns(t *testing.T) {
+	out := KeyValue([][2]string{{"a", "one"}, {"longer", "two"}}, 30)
+	lines := strings.Split(out, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("rows: %q", out)
+	}
+	if !strings.Contains(lines[0], "one") || !strings.Contains(lines[1], "two") {
+		t.Fatalf("values missing: %q", out)
+	}
+}
+
+func TestShortHelpWidth(t *testing.T) {
+	defer SetTheme("dark")
+	_ = SetTheme("dark")
+	km := DefaultKeyMap()
+	s := ShortHelp(60, km.Global("idle", false))
+	if len([]rune(stripANSI(s))) > 60 {
+		t.Fatalf("help footer too wide: %q", s)
+	}
+	if s == "" {
+		t.Fatal("empty help footer")
+	}
+}
+
+func TestPillCancelled(t *testing.T) {
+	if got := Pill("cancelled"); !strings.Contains(got, "cancelled") {
+		t.Fatalf("got %q", got)
+	}
+}

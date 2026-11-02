@@ -1,0 +1,2 @@
+# Exact terminal captures: preserve bytes and don't flag geometry padding.
+demo/frames/*.ans -text -whitespace

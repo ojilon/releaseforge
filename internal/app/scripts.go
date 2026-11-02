@@ -3,9 +3,10 @@ package app
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ojilon/releaseforge/internal/build"
@@ -21,9 +22,7 @@ var scriptExts = map[string]bool{
 }
 
 // doBat runs a .bat/.cmd/.ps1/.sh/.py script with live streaming logs.
-// Usage: bat scripts/foo.bat [args...]
-// This is how you run scripts from a previous app version on your PC,
-// e.g. compiling releaseforge 0.0.4 while running old scripts/*.bat.
+// Usage: bat <script> [args...] — the bridge to older scripts/*.bat flows.
 func (m *Model) doBat(args []string) (string, tea.Cmd) {
 	if len(args) == 0 {
 		return tui.ErrorStyle.Render("bat: usage: bat <script> [args...]"), nil
@@ -40,46 +39,77 @@ func (m *Model) doBat(args []string) (string, tea.Cmd) {
 	if !scriptExts[ext] {
 		return tui.ErrorStyle.Render(fmt.Sprintf("bat: %s not allowed (use .bat .cmd .ps1 .sh .py)", ext)), nil
 	}
-	return m.startScript("bat", script, ext, args[1:])
+	program, programArgs, err := scriptProgram(script, ext, args[1:])
+	if err != nil {
+		return tui.ErrorStyle.Render("bat: " + err.Error()), nil
+	}
+	return m.startScript(program, programArgs, script)
 }
 
 // startScript launches a script async with streaming logs (like build/test).
-func (m *Model) startScript(kind, script, ext string, extra []string) (string, tea.Cmd) {
-	if m.handle != nil {
-		return "a build/test/script is already running (esc cancels)", nil
+func (m *Model) startScript(program string, programArgs []string, script string) (string, tea.Cmd) {
+	if m.run != nil {
+		return "a build/test/script is already running (ctrl+x cancels)", nil
 	}
-	program, programArgs := scriptProgram(script, ext, extra)
 	info, err := project.Detect(m.projectDir)
 	name := filepath.Base(m.projectDir)
 	root := m.projectDir
 	if err == nil {
-		name = info.Name
-		root = info.Root
+		name, root = info.Name, info.Root
 	}
 	_ = storage.EnsureProjectLayout(m.dataRoot, name)
-	logPath := rflog.LogPath(storage.LogsDir(m.dataRoot, name), kind+"-"+filepath.Base(script))
+	logPath := rflog.LogPath(storage.LogsDir(m.dataRoot, name), "bat-"+filepath.Base(script))
 	h := build.Start(program, programArgs, build.Options{Dir: root, LogPath: logPath, Project: name})
-	m.handle = h
-	m.running = true
+	m.installRun("script", filepath.Base(script), PhaseBuilding, h,
+		"script ok — log "+logPath, "script "+filepath.Base(script))
 	m.status = "running " + filepath.Base(script)
-	m.phase = "building"
-	m.pendingRun.kind, m.pendingRun.variant, m.pendingRun.started = "script", filepath.Base(script), time.Now()
-	m.pendingOK, m.pendingErr = kind+" ok — log "+logPath, kind+" "+filepath.Base(script)
-	return fmt.Sprintf("started %s (log %s, esc cancels)", script, logPath), m.waitLine()
+	m.refreshProject()
+	return fmt.Sprintf("started %s (log %s, ctrl+x cancels)", script, logPath),
+		tea.Batch(m.console().StartSpinner(), m.waitLine())
 }
 
-// scriptProgram maps a script file to its launcher.
-func scriptProgram(script, ext string, extra []string) (string, []string) {
+// scriptProgram maps a script file to a launcher available on THIS platform.
+// Correction: the old code always chose cmd.exe / powershell.exe / "python",
+// which fails on Linux/macOS with a confusing exec error. Windows-only
+// extensions now fail with an actionable message instead.
+func scriptProgram(script, ext string, extra []string) (string, []string, error) {
+	windows := runtime.GOOS == "windows"
 	switch ext {
 	case ".bat", ".cmd":
-		return "cmd.exe", append([]string{"/C", script}, extra...)
+		if !windows {
+			return "", nil, fmt.Errorf("%s scripts need Windows (cmd.exe)", ext)
+		}
+		return "cmd.exe", append([]string{"/C", script}, extra...), nil
 	case ".ps1":
-		return "powershell.exe", append([]string{"-ExecutionPolicy", "Bypass", "-File", script}, extra...)
+		if windows {
+			return "powershell.exe", append([]string{"-ExecutionPolicy", "Bypass", "-File", script}, extra...), nil
+		}
+		if p, err := exec.LookPath("pwsh"); err == nil {
+			return p, append([]string{"-File", script}, extra...), nil
+		}
+		return "", nil, fmt.Errorf(".ps1 needs PowerShell (pwsh) on PATH")
 	case ".sh":
-		return "sh", append([]string{script}, extra...)
+		if windows {
+			if p, err := exec.LookPath("bash"); err == nil {
+				return p, append([]string{script}, extra...), nil
+			}
+			return "", nil, fmt.Errorf(".sh needs bash on PATH (e.g. Git Bash)")
+		}
+		return "sh", append([]string{script}, extra...), nil
 	case ".py":
-		return "python", append([]string{script}, extra...)
+		prog := "python3"
+		if windows {
+			prog = "python"
+		}
+		if p, err := exec.LookPath(prog); err == nil {
+			return p, append([]string{script}, extra...), nil
+		}
+		// Some setups only have "python" even on Unix.
+		if p, err := exec.LookPath("python"); err == nil {
+			return p, append([]string{script}, extra...), nil
+		}
+		return "", nil, fmt.Errorf(".py needs python on PATH")
 	default:
-		return script, extra
+		return script, extra, nil
 	}
 }

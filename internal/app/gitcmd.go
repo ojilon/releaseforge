@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/ojilon/releaseforge/internal/git"
@@ -59,14 +58,14 @@ func (m *Model) doGit(args []string) string {
 		}
 		return out
 	case "diff":
-		out, err := exec.Command("git", "-C", info.Root, "diff", "--stat").CombinedOutput()
+		out, err := git.DiffStat(info.Root)
 		if err != nil {
 			return tui.ErrorStyle.Render("git diff: " + err.Error())
 		}
-		if strings.TrimSpace(string(out)) == "" {
+		if strings.TrimSpace(out) == "" {
 			return "git diff: clean"
 		}
-		return strings.TrimRight(string(out), "\n")
+		return strings.TrimRight(out, "\n")
 	case "tags":
 		tags := git.RecentTags(info.Root, 10)
 		if len(tags) == 0 {

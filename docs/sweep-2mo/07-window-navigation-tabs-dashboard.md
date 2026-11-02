@@ -1,5 +1,10 @@
 # 07 — Window Navigation: Tabs / Dashboard Shell
 
+> Delta (2026-11-02): all six windows, the tab strip, `1..6`/`alt+1..6`/`]`/`[`
+> navigation, per-window scroll state and wide-layout side cards are built.
+> The old fixed dashboard is gone (its data lives in Status). Tests/Git/Diffs
+> skeletons are real data views, not empty placeholders.
+
 ## Current state
 
 Single viewport + command bar + first dashboard panel (`docs/04-tui-design.md`

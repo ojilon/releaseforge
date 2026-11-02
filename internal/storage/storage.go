@@ -226,6 +226,17 @@ func SanitizeProjectName(name string) string {
 // ProjectNameFromPath derives a default project name from a filesystem path
 // (base directory name, sanitized).
 func ProjectNameFromPath(dir string) string {
-	base := filepath.Base(filepath.Clean(dir))
-	return SanitizeProjectName(base)
+	// A data-root config can contain a Windows path even when the tool is
+	// running on Linux (and vice versa). filepath.Base only understands the
+	// platform separator, so normalize both before taking the last segment.
+	s := strings.TrimSpace(dir)
+	s = strings.ReplaceAll(s, `\`, "/")
+	s = strings.TrimRight(s, "/")
+	if s == "" {
+		return SanitizeProjectName("")
+	}
+	if i := strings.LastIndex(s, "/"); i >= 0 {
+		s = s[i+1:]
+	}
+	return SanitizeProjectName(s)
 }

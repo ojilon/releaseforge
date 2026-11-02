@@ -22,12 +22,17 @@ func FindApksigner(custom string) string {
 			return custom
 		}
 	}
-	exe := "apksigner"
-	if isWindows() {
-		exe = "apksigner.bat"
-	}
+	// SDKs ship a platform-native launcher and often also the .bat wrapper.
+	// Prefer the native one but accept either, so a Windows SDK inspected on
+	// Linux (or vice versa) still resolves.
+	exe := apksignerName()
 	if p, err := exec.LookPath("apksigner"); err == nil {
 		return p
+	}
+	if isWindows() {
+		if p, err := exec.LookPath("apksigner.bat"); err == nil {
+			return p
+		}
 	}
 	sdk := os.Getenv("ANDROID_HOME")
 	if sdk == "" {
@@ -45,9 +50,11 @@ func FindApksigner(custom string) string {
 			}
 			sort.Sort(sort.Reverse(sort.StringSlice(dirs)))
 			for _, d := range dirs {
-				cand := filepath.Join(bt, d, exe)
-				if st, err := os.Stat(cand); err == nil && !st.IsDir() {
-					return cand
+				for _, name := range apksignerCandidates() {
+					cand := filepath.Join(bt, d, name)
+					if st, err := os.Stat(cand); err == nil && !st.IsDir() {
+						return cand
+					}
 				}
 			}
 		}
@@ -57,6 +64,24 @@ func FindApksigner(custom string) string {
 
 func isWindows() bool {
 	return os.PathSeparator == '\\'
+}
+
+// apksignerName is the launcher used when no SDK build-tools directory is
+// found (exec.LookPath fallback).
+func apksignerName() string {
+	if isWindows() {
+		return "apksigner.bat"
+	}
+	return "apksigner"
+}
+
+// apksignerCandidates lists build-tools launchers, native one first.
+func apksignerCandidates() []string {
+	native := apksignerName()
+	if native == "apksigner.bat" {
+		return []string{"apksigner.bat", "apksigner"}
+	}
+	return []string{"apksigner", "apksigner.bat"}
 }
 
 // SignApk signs apk with keystore/alias/password and verifies.

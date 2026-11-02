@@ -89,7 +89,7 @@ func TestSanitizeProjectName(t *testing.T) {
 		"a/b\\c:d":           "a-b-c-d",
 		"":                   "unnamed-project",
 		"...":                "unnamed-project",
-		"  name. ":            "name",
+		"  name. ":           "name",
 	}
 	for in, want := range cases {
 		if got := SanitizeProjectName(in); got != want {
@@ -99,8 +99,18 @@ func TestSanitizeProjectName(t *testing.T) {
 }
 
 func TestProjectNameFromPath(t *testing.T) {
-	if got := ProjectNameFromPath(`D:\Dev\Conductino-Android\`); got != "Conductino-Android" {
-		t.Fatalf("got %q", got)
+	// Both separator styles must work on every OS: a data-root config can
+	// carry a path written on another machine.
+	cases := map[string]string{
+		`D:\Dev\Conductino-Android\`: "Conductino-Android",
+		`D:\Dev\My App`:              "My App",
+		`/home/user/releaseforge/`:   "releaseforge",
+		`/home/user/My App`:          "My App",
+	}
+	for in, want := range cases {
+		if got := ProjectNameFromPath(in); got != want {
+			t.Errorf("ProjectNameFromPath(%q)=%q want %q", in, got, want)
+		}
 	}
 }
 

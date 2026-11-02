@@ -1,5 +1,10 @@
 # 41 — Focus Routing, Mouse, Scroll (no more focus bugs)
 
+> Delta (2026-11-02): single-consumer dispatch, per-window offsets and
+> Follow/Free scroll policies are built; typed keys never scroll and nav keys
+> never type. `TestSingleConsumerDispatch` and
+> `TestWindowSwitchKeepsScroll` pin it. Click-to-focus is still open.
+
 ## Current state
 
 `Update:281` forwards EVERY msg to input + viewport; `render()` follow-mode

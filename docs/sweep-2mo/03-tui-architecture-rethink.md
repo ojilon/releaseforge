@@ -1,5 +1,10 @@
 # 03 — TUI Architecture Rethink (kill the god-model)
 
+> Delta (2026-11-02): the Router/Window split is now built — `internal/app/windows.go`
+> defines `Window`, `Model` routes to exactly one consumer, and six windows
+> own their state. A services layer (zero tea imports) is still outstanding.
+> See [../04-tui-design.md](../04-tui-design.md) and [../STATE.md](../STATE.md).
+
 ## Current state
 
 > Delta: the 833-line `internal/app/app.go` is GONE — split into

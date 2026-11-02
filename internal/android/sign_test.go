@@ -49,8 +49,13 @@ func TestFindApksignerSdkNewest(t *testing.T) {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(d, "apksigner.bat"), []byte("@echo off\n"), 0o644); err != nil {
-			t.Fatal(err)
+		// Create both launchers: the Android SDK ships .bat on Windows and a
+		// shell script elsewhere, but mixed installs are common. The test must
+		// pass on every host OS.
+		for _, n := range []string{"apksigner", "apksigner.bat"} {
+			if err := os.WriteFile(filepath.Join(d, n), []byte("@echo off\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	// Isolate from any real apksigner on PATH so the SDK branch is exercised.
@@ -58,7 +63,7 @@ func TestFindApksignerSdkNewest(t *testing.T) {
 	t.Setenv("ANDROID_HOME", sdk)
 	t.Setenv("ANDROID_SDK_ROOT", "")
 	got := FindApksigner("")
-	want := filepath.Join(sdk, "build-tools", "35.0.0", "apksigner.bat")
+	want := filepath.Join(sdk, "build-tools", "35.0.0", apksignerName())
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}

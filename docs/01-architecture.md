@@ -22,11 +22,16 @@
 │    android/   APK, apksigner, adb (after scan foundation)   │
 │    github/    gh / API release create                       │
 │    log/       live stream + persist                         │
-│    metrics/   later                                         │
-│    tui/       styles, shared widgets, help view             │
-│    app/       Bubble Tea model (command bar, panes, open)   │
+│    metrics/   build/test history (implemented)              │
+│    tui/       theme, layout, keys, intent table, fuzzy      │
+│    app/       Bubble Tea shell + 6 windows + overlays       │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> Delta (2026-11-02): `internal/app` is now a windowed shell
+> (`model/update/view/windows/window_*/overlays/phase`), `internal/tui` owns
+> layout geometry, the verb table and key bindings. See
+> [04-tui-design.md](04-tui-design.md) and [STATE.md](STATE.md).
 
 ## Design rules
 
@@ -42,8 +47,9 @@
 3. `project.Scan` → git + markers + version hints.
 4. `storage.EnsureProjectLayout` + write `cache/scan.json` + minimal config.
 5. `history.Touch` updates recent projects.
-6. UI reads cache for Overview / Git / Tools panes.
-7. `help` / `-h` renders help text into the main viewport.
+6. The Status / Git / Tests / Logs windows read cache and persisted data.
+7. `help` / `?` opens the generated Help window (window 6); the same table
+   is printed by `releaseforge commands`.
 
 ## Later: release data flow
 

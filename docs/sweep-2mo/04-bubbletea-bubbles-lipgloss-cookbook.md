@@ -1,5 +1,11 @@
 # 04 — Bubble Tea / Bubbles / Lipgloss Cookbook (make it legit)
 
+> Delta (2026-11-02): `internal/tui/layout.go`, runewidth-safe `Clamp`/`Truncate`,
+> `key.Binding` + `help.Model` footers, `DetectTheme`/`NO_COLOR`, and
+> `bubbles/table|list|filepicker|spinner` are all implemented. Snapshot tests
+> cover 50/70/100/160/200 columns. Glamour/UTF-8 byte slicing concerns are closed.
+> See [../STATE.md](../STATE.md).
+
 ## Current state
 
 `internal/tui/theme.go` + `styles.go` + `view.go:View()` — `Theme` struct
